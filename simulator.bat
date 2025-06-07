@@ -57,19 +57,20 @@ if !errorlevel! equ 0 (
     echo.
     echo 设备连接成功！
     
-    echo.
-    echo 正在配置 Gradle 优化设置...
-    set GRADLE_OPTS=-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.jvmargs=-Xmx2048m
+    @REM echo.
+    @REM echo 正在配置 Gradle 优化设置...
+    @REM set GRADLE_OPTS=-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.jvmargs=-Xmx2048m
     
-    echo.
-    echo 正在预编译 Android 项目...
-    cd android
-    call gradlew assembleDebug --daemon
-    cd ..
+    @REM echo.
+    @REM echo 正在预编译 Android 项目...
+    @REM cd android
+    @REM call gradlew assembleDebug --daemon
+    @REM cd ..
     
     echo.
     echo 正在启动 Flutter 应用...
-    flutter run --no-build
+    @REM flutter run --no-build -v
+    @REM flutter run --no-build
 ) else (
     echo.
     echo 警告: 未检测到已连接的设备

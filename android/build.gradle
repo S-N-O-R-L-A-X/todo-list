@@ -1,9 +1,29 @@
-allprojects {
+buildscript {
     repositories {
+        // 添加阿里云镜像
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/jcenter' }
+        // 保留原有仓库作为备选
         google()
         mavenCentral()
     }
 }
+
+allprojects {
+    repositories {
+        // 添加阿里云镜像
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/jcenter' }
+        // 保留原有仓库作为备选
+        google()
+        mavenCentral()
+    }
+}
+
+// ...existing code...
 
 rootProject.buildDir = "../build"
 subprojects {
