@@ -1,12 +1,15 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/todo.dart';
+import 'notification_service.dart';
 
 class TodoService {
   static const String _key = 'todos';
   final SharedPreferences _prefs;
 
-  TodoService(this._prefs);
+  final NotificationService notificationService;
+
+  TodoService(this._prefs, this.notificationService);
 
   Future<List<Todo>> getTodos() async {
     final String? todosJson = _prefs.getString(_key);

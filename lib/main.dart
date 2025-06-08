@@ -2,24 +2,33 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models/todo_provider.dart';
+import 'models/todo.dart';
 import 'services/todo_service.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
-  final todoService = TodoService(prefs);
-  runApp(MyApp(todoService: todoService));
+  final notificationService = NotificationService();
+  await notificationService.initialize();
+  final todoService = TodoService(prefs, notificationService);
+  runApp(MyApp(
+      todoService: todoService, notificationService: notificationService));
 }
 
 class MyApp extends StatelessWidget {
   final TodoService todoService;
+  final NotificationService notificationService;
 
-  const MyApp({super.key, required this.todoService});
+  const MyApp(
+      {super.key,
+      required this.todoService,
+      required this.notificationService});
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => TodoProvider(todoService),
+      create: (_) => TodoProvider(todoService, notificationService),
       child: MaterialApp(
         title: 'Todo List',
         theme: ThemeData(
@@ -39,11 +48,20 @@ class TodoListScreen extends StatefulWidget {
   State<TodoListScreen> createState() => _TodoListScreenState();
 }
 
-class _TodoListScreenState extends State<TodoListScreen> {
+class _TodoListScreenState extends State<TodoListScreen>
+    with SingleTickerProviderStateMixin {
   final _textController = TextEditingController();
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+  }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _textController.dispose();
     super.dispose();
   }
@@ -54,31 +72,26 @@ class _TodoListScreenState extends State<TodoListScreen> {
       appBar: AppBar(
         title: const Text('待办事项'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: '全部'),
+            Tab(text: '定时任务'),
+            Tab(text: '每日打卡'),
+            Tab(text: 'DDL'),
+          ],
+        ),
       ),
       body: Consumer<TodoProvider>(
         builder: (context, todoProvider, child) {
-          final todos = todoProvider.todos;
-          return ListView.builder(
-            itemCount: todos.length,
-            itemBuilder: (context, index) {
-              final todo = todos[index];
-              return ListTile(
-                leading: Checkbox(
-                  value: todo.isCompleted,
-                  onChanged: (_) => todoProvider.toggleTodo(todo.id),
-                ),
-                title: Text(
-                  todo.title,
-                  style: TextStyle(
-                    decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
-                  ),
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: () => todoProvider.deleteTodo(todo.id),
-                ),
-              );
-            },
+          return TabBarView(
+            controller: _tabController,
+            children: [
+              _buildTodoList(todoProvider.todos),
+              _buildTodoList(todoProvider.scheduledTodos),
+              _buildTodoList(todoProvider.dailyTodos),
+              _buildTodoList(todoProvider.deadlineTodos),
+            ],
           );
         },
       ),
@@ -90,35 +103,465 @@ class _TodoListScreenState extends State<TodoListScreen> {
     );
   }
 
-  Future<void> _showAddTodoDialog(BuildContext context) async {
+  Widget _buildTodoList(List<Todo> todos) {
+    if (todos.isEmpty) {
+      return const Center(
+        child: Text('暂无待办事项'),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: todos.length,
+      itemBuilder: (context, index) {
+        final todo = todos[index];
+        final bool isScheduled = todo.type == TodoType.scheduled;
+        String? subtitle;
+        if (isScheduled && todo.scheduledDate != null) {
+          subtitle =
+              '${todo.scheduledDate!.year}-${todo.scheduledDate!.month}-${todo.scheduledDate!.day}';
+          if (todo.startTime != null && todo.endTime != null) {
+            subtitle +=
+                ' ${todo.startTime!.hour}:${todo.startTime!.minute.toString().padLeft(2, '0')} - '
+                '${todo.endTime!.hour}:${todo.endTime!.minute.toString().padLeft(2, '0')}';
+          }
+          if (todo.needsReminder) {
+            subtitle += ' (提醒)';
+          }
+        }
+
+        return Dismissible(
+          key: Key(todo.id),
+          background: Container(
+            color: Colors.red,
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20.0),
+            child: const Icon(Icons.delete, color: Colors.white),
+          ),
+          direction: DismissDirection.endToStart,
+          onDismissed: (direction) {
+            context.read<TodoProvider>().deleteTodo(todo.id);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('已删除：${todo.title}')),
+            );
+          },
+          child: ListTile(
+            leading: Checkbox(
+              value: todo.isCompleted,
+              onChanged: (_) =>
+                  context.read<TodoProvider>().toggleTodo(todo.id),
+            ),
+            title: Text(
+              todo.title,
+              style: TextStyle(
+                decoration:
+                    todo.isCompleted ? TextDecoration.lineThrough : null,
+              ),
+            ),
+            subtitle: subtitle != null ? Text(subtitle) : null,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isScheduled)
+                  Icon(
+                    Icons.schedule,
+                    color: todo.needsReminder ? Colors.blue : Colors.grey,
+                    size: 20,
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () => _showEditTodoDialog(context, todo),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditTodoDialog(BuildContext context, Todo todo) async {
+    _textController.text = todo.title;
+    DateTime? selectedDate = todo.scheduledDate;
+    TimeOfDay? startTime = todo.startTime;
+    TimeOfDay? endTime = todo.endTime;
+    bool needsReminder = todo.needsReminder;
+    TodoType selectedType = todo.type;
+
     return showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('添加待办事项'),
-          content: TextField(
-            controller: _textController,
-            decoration: const InputDecoration(
-              hintText: '请输入待办事项内容',
-            ),
-            autofocus: true,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () {
-                if (_textController.text.isNotEmpty) {
-                  context.read<TodoProvider>().addTodo(_textController.text);
-                  _textController.clear();
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('添加'),
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('编辑待办事项'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _textController,
+                      decoration: const InputDecoration(
+                        hintText: '请输入待办事项内容',
+                      ),
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButton<TodoType>(
+                      value: selectedType,
+                      items: TodoType.values.map((type) {
+                        String label;
+                        switch (type) {
+                          case TodoType.regular:
+                            label = '普通任务';
+                            break;
+                          case TodoType.scheduled:
+                            label = '定时任务';
+                            break;
+                          case TodoType.daily:
+                            label = '每日打卡';
+                            break;
+                          case TodoType.deadline:
+                            label = 'DDL任务';
+                            break;
+                        }
+                        return DropdownMenuItem(
+                          value: type,
+                          child: Text(label),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          selectedType = value!;
+                        });
+                      },
+                    ),
+                    if (selectedType == TodoType.scheduled) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Text('日期: '),
+                          TextButton(
+                            onPressed: () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: selectedDate ?? DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now()
+                                    .add(const Duration(days: 365)),
+                              );
+                              if (date != null) {
+                                setState(() {
+                                  selectedDate = date;
+                                });
+                              }
+                            },
+                            child: Text(
+                              selectedDate != null
+                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
+                                  : '选择日期',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('开始时间: '),
+                          TextButton(
+                            onPressed: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: startTime ?? TimeOfDay.now(),
+                              );
+                              if (time != null) {
+                                setState(() {
+                                  startTime = time;
+                                });
+                              }
+                            },
+                            child: Text(
+                              startTime != null
+                                  ? '${startTime!.hour}:${startTime!.minute.toString().padLeft(2, '0')}'
+                                  : '选择时间',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('结束时间: '),
+                          TextButton(
+                            onPressed: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: endTime ?? TimeOfDay.now(),
+                              );
+                              if (time != null) {
+                                setState(() {
+                                  endTime = time;
+                                });
+                              }
+                            },
+                            child: Text(
+                              endTime != null
+                                  ? '${endTime!.hour}:${endTime!.minute.toString().padLeft(2, '0')}'
+                                  : '选择时间',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: needsReminder,
+                            onChanged: (value) {
+                              setState(() {
+                                needsReminder = value!;
+                              });
+                            },
+                          ),
+                          const Text('需要提醒'),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    _textController.clear();
+                    Navigator.pop(context);
+                  },
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    if (_textController.text.isNotEmpty) {
+                      if (selectedType == TodoType.scheduled) {
+                        if (selectedDate == null ||
+                            startTime == null ||
+                            endTime == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('请填写完整的定时任务信息')),
+                          );
+                          return;
+                        }
+                      }
+
+                      final updatedTodo = todo.copyWith(
+                        title: _textController.text,
+                        type: selectedType,
+                        scheduledDate: selectedDate,
+                        startTime: startTime,
+                        endTime: endTime,
+                        needsReminder: needsReminder,
+                      );
+
+                      context.read<TodoProvider>().updateTodo(updatedTodo);
+                      _textController.clear();
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showAddTodoDialog(BuildContext context) async {
+    DateTime? selectedDate;
+    TimeOfDay? startTime;
+    TimeOfDay? endTime;
+    bool needsReminder = false;
+    TodoType selectedType = TodoType.regular;
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('添加待办事项'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _textController,
+                      decoration: const InputDecoration(
+                        hintText: '请输入待办事项内容',
+                      ),
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButton<TodoType>(
+                      value: selectedType,
+                      items: TodoType.values.map((type) {
+                        String label;
+                        switch (type) {
+                          case TodoType.regular:
+                            label = '普通任务';
+                            break;
+                          case TodoType.scheduled:
+                            label = '定时任务';
+                            break;
+                          case TodoType.daily:
+                            label = '每日打卡';
+                            break;
+                          case TodoType.deadline:
+                            label = 'DDL任务';
+                            break;
+                        }
+                        return DropdownMenuItem(
+                          value: type,
+                          child: Text(label),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          selectedType = value!;
+                        });
+                      },
+                    ),
+                    if (selectedType == TodoType.scheduled) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Text('日期: '),
+                          TextButton(
+                            onPressed: () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now()
+                                    .add(const Duration(days: 365)),
+                              );
+                              if (date != null) {
+                                setState(() {
+                                  selectedDate = date;
+                                });
+                              }
+                            },
+                            child: Text(
+                              selectedDate != null
+                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
+                                  : '选择日期',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('开始时间: '),
+                          TextButton(
+                            onPressed: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay.now(),
+                              );
+                              if (time != null) {
+                                setState(() {
+                                  startTime = time;
+                                });
+                              }
+                            },
+                            child: Text(
+                              startTime != null
+                                  ? '${startTime!.hour}:${startTime!.minute}'
+                                  : '选择时间',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('结束时间: '),
+                          TextButton(
+                            onPressed: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay.now(),
+                              );
+                              if (time != null) {
+                                setState(() {
+                                  endTime = time;
+                                });
+                              }
+                            },
+                            child: Text(
+                              endTime != null
+                                  ? '${endTime!.hour}:${endTime!.minute}'
+                                  : '选择时间',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: needsReminder,
+                            onChanged: (value) {
+                              setState(() {
+                                needsReminder = value!;
+                              });
+                            },
+                          ),
+                          const Text('需要提醒'),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    if (_textController.text.isNotEmpty) {
+                      if (selectedType == TodoType.scheduled) {
+                        if (selectedDate == null ||
+                            startTime == null ||
+                            endTime == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('请填写完整的定时任务信息')),
+                          );
+                          return;
+                        }
+                      }
+
+                      context.read<TodoProvider>().addTodo(
+                            _textController.text,
+                            type: selectedType,
+                            scheduledDate: selectedDate,
+                            startTime: startTime,
+                            endTime: endTime,
+                            needsReminder: needsReminder,
+                          );
+                      _textController.clear();
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: const Text('添加'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
