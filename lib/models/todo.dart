@@ -21,6 +21,10 @@ class Todo {
   int streakCount; // 连续打卡天数
   DateTime? lastCheckIn; // 最后打卡时间
 
+  // DDL任务相关字段
+  DateTime? deadline; // 截止日期
+  Duration? reminderBefore; // 提前多久提醒（如提前1天、2小时等）
+
   Todo({
     String? id,
     required this.title,
@@ -35,6 +39,8 @@ class Todo {
     this.checkInTime,
     this.streakCount = 0,
     this.lastCheckIn,
+    this.deadline,
+    this.reminderBefore,
   })  : id = id ?? const Uuid().v4(),
         createdAt = createdAt ?? DateTime.now(),
         weekdays = weekdays ?? List.filled(7, true); // 默认每天都需要打卡
@@ -52,6 +58,8 @@ class Todo {
     TimeOfDay? checkInTime,
     int? streakCount,
     DateTime? lastCheckIn,
+    DateTime? deadline,
+    Duration? reminderBefore,
   }) {
     return Todo(
       id: id,
@@ -63,11 +71,74 @@ class Todo {
       endTime: endTime ?? this.endTime,
       needsReminder: needsReminder ?? this.needsReminder,
       type: type ?? this.type,
-      weekdays: weekdays ?? List.from(this.weekdays),
+      weekdays: weekdays ?? this.weekdays,
       checkInTime: checkInTime ?? this.checkInTime,
       streakCount: streakCount ?? this.streakCount,
       lastCheckIn: lastCheckIn ?? this.lastCheckIn,
-    )..completedAt = completedAt ?? this.completedAt;
+      deadline: deadline ?? this.deadline,
+      reminderBefore: reminderBefore ?? this.reminderBefore,
+    );
+  }
+
+  bool checkIn() {
+    if (type != TodoType.daily) return false;
+
+    final now = DateTime.now();
+    if (!weekdays[now.weekday % 7]) return false;
+
+    if (lastCheckIn?.day == now.day) return false;
+
+    if (checkInTime != null) {
+      final checkInDateTime = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        checkInTime!.hour,
+        checkInTime!.minute,
+      );
+      if (now.isBefore(checkInDateTime)) return false;
+    }
+
+    if (lastCheckIn != null) {
+      final yesterday = DateTime(now.year, now.month, now.day - 1);
+      if (lastCheckIn!.day == yesterday.day) {
+        streakCount++;
+      } else {
+        streakCount = 1;
+      }
+    } else {
+      streakCount = 1;
+    }
+
+    lastCheckIn = now;
+    return true;
+  }
+
+  bool needsCheckInToday() {
+    if (type != TodoType.daily) return false;
+    final now = DateTime.now();
+    return weekdays[now.weekday % 7] && lastCheckIn?.day != now.day;
+  }
+
+  String getRemainingTime() {
+    if (type != TodoType.deadline || deadline == null) return '';
+
+    final now = DateTime.now();
+    final difference = deadline!.difference(now);
+
+    if (difference.isNegative) {
+      return '已超期';
+    }
+
+    if (difference.inDays > 0) {
+      return '剩余 ${difference.inDays} 天';
+    } else if (difference.inHours > 0) {
+      return '剩余 ${difference.inHours} 小时';
+    } else if (difference.inMinutes > 0) {
+      return '剩余 ${difference.inMinutes} 分钟';
+    } else {
+      return '即将到期';
+    }
   }
 
   Map<String, dynamic> toJson() {
@@ -92,6 +163,8 @@ class Todo {
           : null,
       'streakCount': streakCount,
       'lastCheckIn': lastCheckIn?.toIso8601String(),
+      'deadline': deadline?.toIso8601String(),
+      'reminderBefore': reminderBefore?.inMinutes,
     };
   }
 
@@ -116,84 +189,28 @@ class Todo {
               minute: json['endTime']['minute'] as int,
             )
           : null,
-      needsReminder: json['needsReminder'] as bool? ?? false,
+      needsReminder: json['needsReminder'] as bool,
       type: TodoType.values.firstWhere(
-        (e) => e.toString() == json['type'],
-        orElse: () => TodoType.scheduled,
+        (type) => type.toString() == json['type'],
       ),
-      weekdays: (json['weekdays'] as List<dynamic>?)?.cast<bool>() ??
-          List.filled(7, true),
+      weekdays: (json['weekdays'] as List<dynamic>).cast<bool>(),
       checkInTime: json['checkInTime'] != null
           ? TimeOfDay(
               hour: json['checkInTime']['hour'] as int,
               minute: json['checkInTime']['minute'] as int,
             )
           : null,
-      streakCount: json['streakCount'] as int? ?? 0,
+      streakCount: json['streakCount'] as int,
       lastCheckIn: json['lastCheckIn'] != null
           ? DateTime.parse(json['lastCheckIn'] as String)
           : null,
-    )..completedAt = json['completedAt'] != null
-        ? DateTime.parse(json['completedAt'] as String)
-        : null;
-  }
-
-  // 检查今天是否需要打卡
-  bool needsCheckInToday() {
-    if (type != TodoType.daily) return false;
-    final today = DateTime.now().weekday % 7; // 转换为0-6，与weekdays数组对应
-    return weekdays[today];
-  }
-
-  // 检查是否可以打卡（在指定时间前后1小时内都可以打卡）
-  bool canCheckIn() {
-    if (type != TodoType.daily || !needsCheckInToday() || checkInTime == null) {
-      return false;
-    }
-
-    final now = DateTime.now();
-    final checkInDateTime = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      checkInTime!.hour,
-      checkInTime!.minute,
+      deadline: json['deadline'] != null
+          ? DateTime.parse(json['deadline'] as String)
+          : null,
+      reminderBefore: json['reminderBefore'] != null
+          ? Duration(minutes: json['reminderBefore'] as int)
+          : null,
     );
-
-    final difference = now.difference(checkInDateTime).inHours.abs();
-    return difference <= 1; // 打卡时间前后1小时内都可以打卡
-  }
-
-  // 执行打卡
-  bool checkIn() {
-    if (!canCheckIn()) return false;
-
-    final now = DateTime.now();
-
-    // 检查是否已经打过卡了
-    if (lastCheckIn != null &&
-        lastCheckIn!.year == now.year &&
-        lastCheckIn!.month == now.month &&
-        lastCheckIn!.day == now.day) {
-      return false;
-    }
-
-    // 检查是否保持连续
-    if (lastCheckIn != null) {
-      final yesterday = DateTime.now().subtract(const Duration(days: 1));
-      if (lastCheckIn!.year == yesterday.year &&
-          lastCheckIn!.month == yesterday.month &&
-          lastCheckIn!.day == yesterday.day) {
-        streakCount++; // 连续打卡
-      } else {
-        streakCount = 1; // 重新开始计数
-      }
-    } else {
-      streakCount = 1; // 第一次打卡
-    }
-
-    lastCheckIn = now;
-    return true;
   }
 }
 

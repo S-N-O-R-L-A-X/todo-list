@@ -29,6 +29,7 @@ class TodoProvider with ChangeNotifier {
     _todos = await _todoService.getTodos();
     notifyListeners();
   }
+
   Future<void> addTodo(
     String title, {
     TodoType type = TodoType.scheduled,
@@ -38,7 +39,10 @@ class TodoProvider with ChangeNotifier {
     bool needsReminder = false,
     List<bool>? weekdays,
     TimeOfDay? checkInTime,
-  }) async {    final todo = Todo(
+    DateTime? deadline,
+    Duration? reminderBefore,
+  }) async {
+    final todo = Todo(
       title: title,
       type: type,
       scheduledDate: scheduledDate,
@@ -47,6 +51,8 @@ class TodoProvider with ChangeNotifier {
       needsReminder: needsReminder,
       weekdays: weekdays,
       checkInTime: type == TodoType.daily ? checkInTime : null,
+      deadline: deadline,
+      reminderBefore: reminderBefore,
     );
 
     await _todoService.addTodo(todo);

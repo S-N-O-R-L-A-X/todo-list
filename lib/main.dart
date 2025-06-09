@@ -57,6 +57,9 @@ class _TodoListScreenState extends State<TodoListScreen>
   List<bool> selectedWeekdays = List.filled(7, true);
   TimeOfDay? checkInTime;
 
+  // DDL任务相关变量
+  Duration? reminderBefore;
+
   @override
   void initState() {
     super.initState();
@@ -120,16 +123,25 @@ class _TodoListScreenState extends State<TodoListScreen>
         final todo = todos[index];
         final bool isScheduled = todo.type == TodoType.scheduled;
         String? subtitle;
-        
         // 构建不同类型任务的副标题
         if (isScheduled && todo.scheduledDate != null) {
-          subtitle = '${todo.scheduledDate!.year}-${todo.scheduledDate!.month}-${todo.scheduledDate!.day}';
+          subtitle =
+              '${todo.scheduledDate!.year}-${todo.scheduledDate!.month}-${todo.scheduledDate!.day}';
           if (todo.startTime != null && todo.endTime != null) {
-            subtitle += ' ${todo.startTime!.hour}:${todo.startTime!.minute.toString().padLeft(2, '0')} - '
-                    '${todo.endTime!.hour}:${todo.endTime!.minute.toString().padLeft(2, '0')}';
+            subtitle +=
+                ' ${todo.startTime!.hour}:${todo.startTime!.minute.toString().padLeft(2, '0')} - '
+                '${todo.endTime!.hour}:${todo.endTime!.minute.toString().padLeft(2, '0')}';
           }
           if (todo.needsReminder) {
             subtitle += ' (提醒)';
+          }
+        } else if (todo.type == TodoType.deadline && todo.deadline != null) {
+          subtitle =
+              '${todo.deadline!.year}-${todo.deadline!.month}-${todo.deadline!.day} '
+              '${todo.startTime?.format(context) ?? '23:59'}\n${todo.getRemainingTime()}';
+          if (todo.reminderBefore != null) {
+            subtitle +=
+                '\n提前${todo.reminderBefore!.inHours >= 24 ? '${todo.reminderBefore!.inDays}天' : '${todo.reminderBefore!.inHours}小时'}提醒';
           }
         } else if (todo.type == TodoType.daily) {
           final weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
@@ -189,12 +201,14 @@ class _TodoListScreenState extends State<TodoListScreen>
                   )
                 : Checkbox(
                     value: todo.isCompleted,
-                    onChanged: (_) => context.read<TodoProvider>().toggleTodo(todo.id),
+                    onChanged: (_) =>
+                        context.read<TodoProvider>().toggleTodo(todo.id),
                   ),
             title: Text(
               todo.title,
               style: TextStyle(
-                decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
+                decoration:
+                    todo.isCompleted ? TextDecoration.lineThrough : null,
               ),
             ),
             subtitle: subtitle != null ? Text(subtitle) : null,
@@ -207,7 +221,21 @@ class _TodoListScreenState extends State<TodoListScreen>
                     color: todo.needsReminder ? Colors.blue : Colors.grey,
                     size: 20,
                   )
-                else if (todo.type == TodoType.daily && todo.needsCheckInToday())
+                else if (todo.type == TodoType.deadline)
+                  Icon(
+                    Icons.timer,
+                    color: todo.isCompleted
+                        ? Colors.grey
+                        : todo.deadline!.isBefore(DateTime.now())
+                            ? Colors.red
+                            : todo.deadline!.difference(DateTime.now()).inDays <
+                                    1
+                                ? Colors.orange
+                                : Colors.blue,
+                    size: 20,
+                  )
+                else if (todo.type == TodoType.daily &&
+                    todo.needsCheckInToday())
                   const Icon(
                     Icons.alarm_on,
                     color: Colors.blue,
@@ -231,7 +259,11 @@ class _TodoListScreenState extends State<TodoListScreen>
     TimeOfDay? startTime = todo.startTime;
     TimeOfDay? endTime = todo.endTime;
     bool needsReminder = todo.needsReminder;
-    TodoType selectedType = todo.type;
+    TodoType selectedType = todo.type; // 初始化每日打卡相关变量
+    selectedWeekdays = todo.type == TodoType.daily
+        ? List.from(todo.weekdays)
+        : List.filled(7, true);
+    checkInTime = todo.type == TodoType.daily ? todo.checkInTime : null;
 
     return showDialog(
       context: context,
@@ -279,7 +311,97 @@ class _TodoListScreenState extends State<TodoListScreen>
                         });
                       },
                     ),
-                    if (selectedType == TodoType.scheduled) ...[
+                    if (selectedType == TodoType.deadline) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Text('截止日期: '),
+                          TextButton(
+                            onPressed: () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: selectedDate ?? DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now()
+                                    .add(const Duration(days: 365)),
+                              );
+                              if (date != null) {
+                                setState(() {
+                                  selectedDate = date;
+                                });
+                              }
+                            },
+                            child: Text(
+                              selectedDate != null
+                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
+                                  : '选择日期',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('截止时间: '),
+                          TextButton(
+                            onPressed: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: startTime ?? TimeOfDay.now(),
+                              );
+                              if (time != null) {
+                                setState(() {
+                                  startTime = time;
+                                });
+                              }
+                            },
+                            child: Text(
+                              startTime != null
+                                  ? startTime!.format(context)
+                                  : '选择时间',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text('提醒设置:'),
+                      ListTile(
+                        title: const Text('提前1天'),
+                        leading: Radio<Duration>(
+                          value: const Duration(days: 1),
+                          groupValue: reminderBefore,
+                          onChanged: (Duration? value) {
+                            setState(() {
+                              reminderBefore = value;
+                            });
+                          },
+                        ),
+                      ),
+                      ListTile(
+                        title: const Text('提前12小时'),
+                        leading: Radio<Duration>(
+                          value: const Duration(hours: 12),
+                          groupValue: reminderBefore,
+                          onChanged: (Duration? value) {
+                            setState(() {
+                              reminderBefore = value;
+                            });
+                          },
+                        ),
+                      ),
+                      ListTile(
+                        title: const Text('提前2小时'),
+                        leading: Radio<Duration>(
+                          value: const Duration(hours: 2),
+                          groupValue: reminderBefore,
+                          onChanged: (Duration? value) {
+                            setState(() {
+                              reminderBefore = value;
+                            });
+                          },
+                        ),
+                      ),
+                    ] else if (selectedType == TodoType.scheduled) ...[
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -394,14 +516,33 @@ class _TodoListScreenState extends State<TodoListScreen>
                           return;
                         }
                       }
-
                       final updatedTodo = todo.copyWith(
                         title: _textController.text,
                         type: selectedType,
-                        scheduledDate: selectedDate,
-                        startTime: startTime,
-                        endTime: endTime,
-                        needsReminder: needsReminder,
+                        scheduledDate: selectedType == TodoType.scheduled
+                            ? selectedDate
+                            : null,
+                        startTime: selectedType == TodoType.deadline
+                            ? startTime
+                            : selectedType == TodoType.scheduled
+                                ? startTime
+                                : null,
+                        endTime:
+                            selectedType == TodoType.scheduled ? endTime : null,
+                        needsReminder: selectedType == TodoType.scheduled
+                            ? needsReminder
+                            : true,
+                        weekdays: selectedType == TodoType.daily
+                            ? selectedWeekdays
+                            : null,
+                        checkInTime:
+                            selectedType == TodoType.daily ? checkInTime : null,
+                        deadline: selectedType == TodoType.deadline
+                            ? selectedDate
+                            : null,
+                        reminderBefore: selectedType == TodoType.deadline
+                            ? reminderBefore
+                            : null,
                       );
 
                       context.read<TodoProvider>().updateTodo(updatedTodo);
@@ -471,7 +612,99 @@ class _TodoListScreenState extends State<TodoListScreen>
                           selectedType = value!;
                         });
                       },
-                    ),                    if (selectedType == TodoType.daily) ...[
+                    ),
+                    if (selectedType == TodoType.deadline) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Text('截止日期: '),
+                          TextButton(
+                            onPressed: () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: selectedDate ?? DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now()
+                                    .add(const Duration(days: 365)),
+                              );
+                              if (date != null) {
+                                setState(() {
+                                  selectedDate = date;
+                                });
+                              }
+                            },
+                            child: Text(
+                              selectedDate != null
+                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
+                                  : '选择日期',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('截止时间: '),
+                          TextButton(
+                            onPressed: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: startTime ?? TimeOfDay.now(),
+                              );
+                              if (time != null) {
+                                setState(() {
+                                  startTime = time;
+                                });
+                              }
+                            },
+                            child: Text(
+                              startTime != null
+                                  ? '${startTime!.format(context)}'
+                                  : '选择时间',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text('提醒设置:'),
+                      ListTile(
+                        title: const Text('提前1天'),
+                        leading: Radio<Duration>(
+                          value: const Duration(days: 1),
+                          groupValue: reminderBefore,
+                          onChanged: (Duration? value) {
+                            setState(() {
+                              reminderBefore = value;
+                            });
+                          },
+                        ),
+                      ),
+                      ListTile(
+                        title: const Text('提前12小时'),
+                        leading: Radio<Duration>(
+                          value: const Duration(hours: 12),
+                          groupValue: reminderBefore,
+                          onChanged: (Duration? value) {
+                            setState(() {
+                              reminderBefore = value;
+                            });
+                          },
+                        ),
+                      ),
+                      ListTile(
+                        title: const Text('提前2小时'),
+                        leading: Radio<Duration>(
+                          value: const Duration(hours: 2),
+                          groupValue: reminderBefore,
+                          onChanged: (Duration? value) {
+                            setState(() {
+                              reminderBefore = value;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                    if (selectedType == TodoType.daily) ...[
                       const SizedBox(height: 16),
                       const Text('打卡时间设置：'),
                       Row(
@@ -504,7 +737,8 @@ class _TodoListScreenState extends State<TodoListScreen>
                         children: [
                           for (var i = 0; i < 7; i++)
                             FilterChip(
-                              label: Text(['日', '一', '二', '三', '四', '五', '六'][i]),
+                              label:
+                                  Text(['日', '一', '二', '三', '四', '五', '六'][i]),
                               selected: selectedWeekdays[i],
                               onSelected: (bool selected) {
                                 setState(() {
@@ -625,22 +859,55 @@ class _TodoListScreenState extends State<TodoListScreen>
                           );
                           return;
                         }
-                      }                      if (selectedType == TodoType.daily && checkInTime == null) {
+                      } else if (selectedType == TodoType.deadline) {
+                        if (selectedDate == null || startTime == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('请设置截止日期和时间')),
+                          );
+                          return;
+                        }
+                        if (reminderBefore == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('请选择提醒时间')),
+                          );
+                          return;
+                        }
+                      } else if (selectedType == TodoType.daily &&
+                          checkInTime == null) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('请设置打卡时间')),
                         );
                         return;
                       }
-
                       context.read<TodoProvider>().addTodo(
                             _textController.text,
                             type: selectedType,
-                            scheduledDate: selectedDate,
-                            startTime: startTime,
-                            endTime: endTime,
-                            needsReminder: selectedType == TodoType.scheduled ? needsReminder : true,
-                            weekdays: selectedType == TodoType.daily ? selectedWeekdays : null,
-                            checkInTime: selectedType == TodoType.daily ? checkInTime : null,
+                            scheduledDate: selectedType == TodoType.scheduled
+                                ? selectedDate
+                                : null,
+                            startTime: selectedType == TodoType.deadline
+                                ? startTime
+                                : selectedType == TodoType.scheduled
+                                    ? startTime
+                                    : null,
+                            endTime: selectedType == TodoType.scheduled
+                                ? endTime
+                                : null,
+                            needsReminder: selectedType == TodoType.scheduled
+                                ? needsReminder
+                                : true,
+                            weekdays: selectedType == TodoType.daily
+                                ? selectedWeekdays
+                                : null,
+                            deadline: selectedType == TodoType.deadline
+                                ? selectedDate
+                                : null,
+                            reminderBefore: selectedType == TodoType.deadline
+                                ? reminderBefore
+                                : null,
+                            checkInTime: selectedType == TodoType.daily
+                                ? checkInTime
+                                : null,
                           );
                       _textController.clear();
                       Navigator.pop(context);

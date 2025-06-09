@@ -44,19 +44,32 @@ class NotificationService {
   }
 
   Future<void> scheduleTodoReminder(Todo todo) async {
-    if (!todo.needsReminder ||
-        todo.scheduledDate == null ||
-        todo.startTime == null) {
-      return;
+    if (!todo.needsReminder) return;
+
+    DateTime? scheduledDateTime;
+    String message = todo.title;
+
+    if (todo.type == TodoType.scheduled &&
+        todo.scheduledDate != null &&
+        todo.startTime != null) {
+      scheduledDateTime = DateTime(
+        todo.scheduledDate!.year,
+        todo.scheduledDate!.month,
+        todo.scheduledDate!.day,
+        todo.startTime!.hour,
+        todo.startTime!.minute,
+      );
+    } else if (todo.type == TodoType.deadline &&
+        todo.deadline != null &&
+        todo.reminderBefore != null) {
+      scheduledDateTime = todo.deadline!.subtract(todo.reminderBefore!);
+      final timeLeft = todo.reminderBefore!.inHours >= 24
+          ? '${todo.reminderBefore!.inDays}天'
+          : '${todo.reminderBefore!.inHours}小时';
+      message = '【DDL提醒】$message 将在$timeLeft后截止';
     }
 
-    final scheduledDateTime = DateTime(
-      todo.scheduledDate!.year,
-      todo.scheduledDate!.month,
-      todo.scheduledDate!.day,
-      todo.startTime!.hour,
-      todo.startTime!.minute,
-    );
+    if (scheduledDateTime == null) return;
 
     // 如果时间已经过去，就不设置提醒
     if (scheduledDateTime.isBefore(DateTime.now())) {
