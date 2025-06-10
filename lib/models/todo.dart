@@ -80,28 +80,39 @@ class Todo {
     );
   }
 
-  bool checkIn() {
+  bool checkIn([DateTime? checkInDate]) {
     if (type != TodoType.daily) return false;
 
-    final now = DateTime.now();
-    if (!weekdays[now.weekday % 7]) return false;
+    final targetDate = checkInDate ?? DateTime.now();
+    if (!weekdays[targetDate.weekday % 7]) return false;
 
-    if (lastCheckIn?.day == now.day) return false;
+    // 不允许重复打卡同一天
+    if (lastCheckIn != null &&
+        lastCheckIn!.year == targetDate.year &&
+        lastCheckIn!.month == targetDate.month &&
+        lastCheckIn!.day == targetDate.day) return false;
 
-    if (checkInTime != null) {
+    // 如果是补打卡，不检查打卡时间
+    if (checkInDate == null && checkInTime != null) {
       final checkInDateTime = DateTime(
-        now.year,
-        now.month,
-        now.day,
+        targetDate.year,
+        targetDate.month,
+        targetDate.day,
         checkInTime!.hour,
         checkInTime!.minute,
       );
-      if (now.isBefore(checkInDateTime)) return false;
+      if (targetDate.isBefore(checkInDateTime)) return false;
     }
 
     if (lastCheckIn != null) {
-      final yesterday = DateTime(now.year, now.month, now.day - 1);
-      if (lastCheckIn!.day == yesterday.day) {
+      final previousDay = DateTime(
+        targetDate.year,
+        targetDate.month,
+        targetDate.day - 1,
+      );
+      if (lastCheckIn!.year == previousDay.year &&
+          lastCheckIn!.month == previousDay.month &&
+          lastCheckIn!.day == previousDay.day) {
         streakCount++;
       } else {
         streakCount = 1;
@@ -110,7 +121,7 @@ class Todo {
       streakCount = 1;
     }
 
-    lastCheckIn = now;
+    lastCheckIn = targetDate;
     return true;
   }
 

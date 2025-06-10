@@ -172,7 +172,7 @@ class _TodoListScreenState extends State<TodoListScreen>
           },
           child: ListTile(
             leading: todo.type == TodoType.daily
-                ? IconButton(
+                ? PopupMenuButton<String>(
                     icon: Icon(
                       Icons.check_circle,
                       color: todo.lastCheckIn?.day == DateTime.now().day
@@ -180,24 +180,77 @@ class _TodoListScreenState extends State<TodoListScreen>
                           : Colors.grey,
                       size: 28,
                     ),
-                    onPressed: () {
-                      if (todo.checkIn()) {
-                        context.read<TodoProvider>().updateTodo(todo);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('打卡成功！连续打卡${todo.streakCount}天'),
-                            backgroundColor: Colors.green,
-                          ),
+                    onSelected: (value) async {
+                      if (value == 'today') {
+                        if (todo.checkIn()) {
+                          context.read<TodoProvider>().updateTodo(todo);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('打卡成功！连续打卡${todo.streakCount}天'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('今天不是打卡日期'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        }
+                      } else if (value == 'select_date') {
+                        final date = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate:
+                              DateTime.now().subtract(const Duration(days: 7)),
+                          lastDate: DateTime.now(),
+                          helpText: '选择补打卡日期',
+                          cancelText: '取消',
+                          confirmText: '确认',
                         );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('现在不是打卡时间'),
-                            backgroundColor: Colors.orange,
-                          ),
-                        );
+                        if (date != null) {
+                          if (todo.checkIn(date)) {
+                            context.read<TodoProvider>().updateTodo(todo);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('补打卡成功！连续打卡${todo.streakCount}天'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('所选日期不是打卡日期'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          }
+                        }
                       }
                     },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'today',
+                        child: Row(
+                          children: [
+                            Icon(Icons.today),
+                            SizedBox(width: 8),
+                            Text('今日打卡'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'select_date',
+                        child: Row(
+                          children: [
+                            Icon(Icons.calendar_today),
+                            SizedBox(width: 8),
+                            Text('补打卡'),
+                          ],
+                        ),
+                      ),
+                    ],
                   )
                 : Checkbox(
                     value: todo.isCompleted,
@@ -705,6 +758,33 @@ class _TodoListScreenState extends State<TodoListScreen>
                       ),
                     ],
                     if (selectedType == TodoType.daily) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Text('打卡日期：'),
+                          TextButton(
+                            onPressed: () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: selectedDate ?? DateTime.now(),
+                                firstDate: DateTime.now()
+                                    .subtract(const Duration(days: 7)),
+                                lastDate: DateTime.now(),
+                              );
+                              if (date != null) {
+                                setState(() {
+                                  selectedDate = date;
+                                });
+                              }
+                            },
+                            child: Text(
+                              selectedDate != null
+                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
+                                  : '打卡日期（可选）',
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 16),
                       const Text('打卡时间设置：'),
                       Row(
