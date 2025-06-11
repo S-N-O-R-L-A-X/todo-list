@@ -21,7 +21,7 @@ class TodoProvider with ChangeNotifier {
   List<Todo> get scheduledTodos =>
       _todos.where((todo) => todo.type == TodoType.scheduled).toList();
   List<Todo> get dailyTodos =>
-      _todos.where((todo) => todo.type == TodoType.daily).toList();
+      _todos.where((todo) => todo.type == TodoType.checkin).toList();
   List<Todo> get deadlineTodos =>
       _todos.where((todo) => todo.type == TodoType.deadline).toList();
 
@@ -37,8 +37,11 @@ class TodoProvider with ChangeNotifier {
     TimeOfDay? startTime,
     TimeOfDay? endTime,
     bool needsReminder = false,
+    CheckinFrequency frequency = CheckinFrequency.daily,
     List<bool>? weekdays,
+    List<bool>? monthDays,
     TimeOfDay? checkInTime,
+    Duration? checkInInterval,
     DateTime? deadline,
     Duration? reminderBefore,
   }) async {
@@ -49,31 +52,89 @@ class TodoProvider with ChangeNotifier {
       startTime: startTime,
       endTime: endTime,
       needsReminder: needsReminder,
+      frequency: frequency,
       weekdays: weekdays,
-      checkInTime: type == TodoType.daily ? checkInTime : null,
+      monthDays: monthDays,
+      checkInTime: checkInTime,
+      checkInInterval: checkInInterval,
       deadline: deadline,
       reminderBefore: reminderBefore,
     );
 
-    await _todoService.addTodo(todo);
-
-    if (needsReminder) {
-      await _notificationService.scheduleTodoReminder(todo);
-    }
-
-    await _loadTodos();
+    _todos.add(todo);
+    await _todoService.saveTodos(_todos);
+    _scheduleNotification(todo);
+    notifyListeners();
   }
 
   Future<void> updateTodo(Todo todo) async {
-    await _todoService.updateTodo(todo);
-
-    if (todo.needsReminder) {
-      await _notificationService.scheduleTodoReminder(todo);
-    } else {
-      await _notificationService.cancelReminder(todo);
+    final index = _todos.indexWhere((t) => t.id == todo.id);
+    if (index != -1) {
+      _todos[index] = todo;
+      await _todoService.saveTodos(_todos);
+      _scheduleNotification(todo);
+      notifyListeners();
     }
+  }
 
-    await _loadTodos();
+  void _scheduleNotification(Todo todo) {
+    if (!todo.needsReminder) return;
+
+    switch (todo.type) {
+      case TodoType.scheduled:
+        if (todo.scheduledDate != null && todo.startTime != null) {
+          final notificationTime = DateTime(
+            todo.scheduledDate!.year,
+            todo.scheduledDate!.month,
+            todo.scheduledDate!.day,
+            todo.startTime!.hour,
+            todo.startTime!.minute,
+          );
+          _notificationService.scheduleNotification(
+            id: todo.id.hashCode,
+            title: '定时任务提醒',
+            body: todo.title,
+            scheduledDate: notificationTime,
+          );
+        }
+        break;
+
+      case TodoType.checkin:
+        if (todo.checkInTime != null) {
+          final now = DateTime.now();
+          final notificationTime = DateTime(
+            now.year,
+            now.month,
+            now.day,
+            todo.checkInTime!.hour,
+            todo.checkInTime!.minute,
+          );
+          // 如果今天的提醒时间已经过了，设置明天的提醒
+          if (notificationTime.isBefore(now)) {
+            notificationTime.add(const Duration(days: 1));
+          }
+          _notificationService.scheduleNotification(
+            id: todo.id.hashCode,
+            title: '打卡提醒',
+            body: '该打卡啦：${todo.title}',
+            scheduledDate: notificationTime,
+          );
+        }
+        break;
+
+      case TodoType.deadline:
+        if (todo.deadline != null && todo.reminderBefore != null) {
+          final notificationTime =
+              todo.deadline!.subtract(todo.reminderBefore!);
+          _notificationService.scheduleNotification(
+            id: todo.id.hashCode,
+            title: 'DDL提醒',
+            body: '${todo.title} 即将到期！',
+            scheduledDate: notificationTime,
+          );
+        }
+        break;
+    }
   }
 
   Future<void> toggleTodo(String id) async {

@@ -84,7 +84,7 @@ class _TodoListScreenState extends State<TodoListScreen>
           tabs: const [
             Tab(text: '全部'),
             Tab(text: '定时任务'),
-            Tab(text: '每日打卡'),
+            Tab(text: '打卡任务'),
             Tab(text: 'DDL'),
           ],
         ),
@@ -143,7 +143,7 @@ class _TodoListScreenState extends State<TodoListScreen>
             subtitle +=
                 '\n提前${todo.reminderBefore!.inHours >= 24 ? '${todo.reminderBefore!.inDays}天' : '${todo.reminderBefore!.inHours}小时'}提醒';
           }
-        } else if (todo.type == TodoType.daily) {
+        } else if (todo.type == TodoType.checkin) {
           final weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
           final activeDays = todo.weekdays
               .asMap()
@@ -171,7 +171,7 @@ class _TodoListScreenState extends State<TodoListScreen>
             );
           },
           child: ListTile(
-            leading: todo.type == TodoType.daily
+            leading: todo.type == TodoType.checkin
                 ? PopupMenuButton<String>(
                     icon: Icon(
                       Icons.check_circle,
@@ -287,7 +287,7 @@ class _TodoListScreenState extends State<TodoListScreen>
                                 : Colors.blue,
                     size: 20,
                   )
-                else if (todo.type == TodoType.daily &&
+                else if (todo.type == TodoType.checkin &&
                     todo.needsCheckInToday())
                   const Icon(
                     Icons.alarm_on,
@@ -312,11 +312,11 @@ class _TodoListScreenState extends State<TodoListScreen>
     TimeOfDay? startTime = todo.startTime;
     TimeOfDay? endTime = todo.endTime;
     bool needsReminder = todo.needsReminder;
-    TodoType selectedType = todo.type; // 初始化每日打卡相关变量
-    selectedWeekdays = todo.type == TodoType.daily
+    TodoType selectedType = todo.type;
+    selectedWeekdays = todo.type == TodoType.checkin
         ? List.from(todo.weekdays)
         : List.filled(7, true);
-    checkInTime = todo.type == TodoType.daily ? todo.checkInTime : null;
+    checkInTime = todo.type == TodoType.checkin ? todo.checkInTime : null;
 
     return showDialog(
       context: context,
@@ -346,8 +346,8 @@ class _TodoListScreenState extends State<TodoListScreen>
                           case TodoType.scheduled:
                             label = '定时任务';
                             break;
-                          case TodoType.daily:
-                            label = '每日打卡';
+                          case TodoType.checkin:
+                            label = '打卡任务';
                             break;
                           case TodoType.deadline:
                             label = 'DDL任务';
@@ -544,6 +544,77 @@ class _TodoListScreenState extends State<TodoListScreen>
                           const Text('需要提醒'),
                         ],
                       ),
+                    ] else if (selectedType == TodoType.checkin) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Text('打卡日期：'),
+                          TextButton(
+                            onPressed: () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: selectedDate ?? DateTime.now(),
+                                firstDate: DateTime.now()
+                                    .subtract(const Duration(days: 7)),
+                                lastDate: DateTime.now(),
+                              );
+                              if (date != null) {
+                                setState(() {
+                                  selectedDate = date;
+                                });
+                              }
+                            },
+                            child: Text(
+                              selectedDate != null
+                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
+                                  : '打卡日期（可选）',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('打卡时间设置：'),
+                      Row(
+                        children: [
+                          const Text('提醒时间: '),
+                          TextButton(
+                            onPressed: () async {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: checkInTime ?? TimeOfDay.now(),
+                              );
+                              if (time != null) {
+                                setState(() {
+                                  checkInTime = time;
+                                });
+                              }
+                            },
+                            child: Text(
+                              checkInTime != null
+                                  ? '${checkInTime!.hour}:${checkInTime!.minute.toString().padLeft(2, '0')}'
+                                  : '选择时间',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text('打卡频率：'),
+                      Wrap(
+                        spacing: 4.0,
+                        children: [
+                          for (var i = 0; i < 7; i++)
+                            FilterChip(
+                              label:
+                                  Text(['日', '一', '二', '三', '四', '五', '六'][i]),
+                              selected: selectedWeekdays[i],
+                              onSelected: (bool selected) {
+                                setState(() {
+                                  selectedWeekdays[i] = selected;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
                     ],
                   ],
                 ),
@@ -585,11 +656,12 @@ class _TodoListScreenState extends State<TodoListScreen>
                         needsReminder: selectedType == TodoType.scheduled
                             ? needsReminder
                             : true,
-                        weekdays: selectedType == TodoType.daily
+                        weekdays: selectedType == TodoType.checkin
                             ? selectedWeekdays
                             : null,
-                        checkInTime:
-                            selectedType == TodoType.daily ? checkInTime : null,
+                        checkInTime: selectedType == TodoType.checkin
+                            ? checkInTime
+                            : null,
                         deadline: selectedType == TodoType.deadline
                             ? selectedDate
                             : null,
@@ -648,8 +720,8 @@ class _TodoListScreenState extends State<TodoListScreen>
                           case TodoType.scheduled:
                             label = '定时任务';
                             break;
-                          case TodoType.daily:
-                            label = '每日打卡';
+                          case TodoType.checkin:
+                            label = '打卡任务';
                             break;
                           case TodoType.deadline:
                             label = 'DDL任务';
@@ -756,8 +828,7 @@ class _TodoListScreenState extends State<TodoListScreen>
                           },
                         ),
                       ),
-                    ],
-                    if (selectedType == TodoType.daily) ...[
+                    ] else if (selectedType == TodoType.checkin) ...[
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -952,7 +1023,7 @@ class _TodoListScreenState extends State<TodoListScreen>
                           );
                           return;
                         }
-                      } else if (selectedType == TodoType.daily &&
+                      } else if (selectedType == TodoType.checkin &&
                           checkInTime == null) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('请设置打卡时间')),
@@ -976,7 +1047,7 @@ class _TodoListScreenState extends State<TodoListScreen>
                             needsReminder: selectedType == TodoType.scheduled
                                 ? needsReminder
                                 : true,
-                            weekdays: selectedType == TodoType.daily
+                            weekdays: selectedType == TodoType.checkin
                                 ? selectedWeekdays
                                 : null,
                             deadline: selectedType == TodoType.deadline
@@ -985,7 +1056,7 @@ class _TodoListScreenState extends State<TodoListScreen>
                             reminderBefore: selectedType == TodoType.deadline
                                 ? reminderBefore
                                 : null,
-                            checkInTime: selectedType == TodoType.daily
+                            checkInTime: selectedType == TodoType.checkin
                                 ? checkInTime
                                 : null,
                           );
