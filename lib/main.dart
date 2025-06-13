@@ -110,11 +110,105 @@ class _TodoListScreenState extends State<TodoListScreen>
     );
   }
 
+  void _handleShowDatePicker(BuildContext context, Todo todo) async {
+    if (!context.mounted) return;
+
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 7)),
+      lastDate: DateTime.now(),
+      helpText: '选择补打卡日期',
+      cancelText: '取消',
+      confirmText: '确认',
+    );
+
+    if (!context.mounted) return;
+    if (date != null) {
+      if (todo.checkIn(date)) {
+        context.read<TodoProvider>().updateTodo(todo);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('补打卡成功！连续打卡${todo.streakCount}天'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('所选日期不是打卡日期'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  }
+
+  void _handleTodayCheckIn(BuildContext context, Todo todo) {
+    if (!context.mounted) return;
+
+    if (todo.checkIn()) {
+      context.read<TodoProvider>().updateTodo(todo);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('打卡成功！连续打卡${todo.streakCount}天'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('今天不是打卡日期'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  Widget _buildPopupMenuButton(Todo todo) {
+    return PopupMenuButton<String>(
+      icon: Icon(
+        Icons.check_circle,
+        color: todo.lastCheckIn?.day == DateTime.now().day
+            ? Colors.green
+            : Colors.grey,
+        size: 28,
+      ),
+      onSelected: (value) async {
+        if (value == 'today') {
+          _handleTodayCheckIn(context, todo);
+        } else if (value == 'select_date') {
+          _handleShowDatePicker(context, todo);
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'today',
+          child: Row(
+            children: [
+              Icon(Icons.today),
+              SizedBox(width: 8),
+              Text('今日打卡'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'select_date',
+          child: Row(
+            children: [
+              Icon(Icons.calendar_today),
+              SizedBox(width: 8),
+              Text('补打卡'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTodoList(List<Todo> todos) {
     if (todos.isEmpty) {
-      return const Center(
-        child: Text('暂无待办事项'),
-      );
+      return const Center(child: Text('暂无待办事项'));
     }
 
     return ListView.builder(
@@ -152,7 +246,7 @@ class _TodoListScreenState extends State<TodoListScreen>
               .map((e) => weekdayLabels[e.key])
               .join(' ');
           subtitle = '打卡时间: ${todo.checkInTime?.format(context) ?? '未设置'}\n'
-              '连续打卡: ${todo.streakCount}天 (每周${activeDays})';
+              '连续打卡: ${todo.streakCount}天 (每周$activeDays)';
         }
 
         return Dismissible(
@@ -165,97 +259,23 @@ class _TodoListScreenState extends State<TodoListScreen>
           ),
           direction: DismissDirection.endToStart,
           onDismissed: (direction) {
-            context.read<TodoProvider>().deleteTodo(todo.id);
-            ScaffoldMessenger.of(context).showSnackBar(
+            final currentContext = context;
+            if (!mounted) return;
+            currentContext.read<TodoProvider>().deleteTodo(todo.id);
+            ScaffoldMessenger.of(currentContext).showSnackBar(
               SnackBar(content: Text('已删除：${todo.title}')),
             );
           },
           child: ListTile(
             leading: todo.type == TodoType.checkin
-                ? PopupMenuButton<String>(
-                    icon: Icon(
-                      Icons.check_circle,
-                      color: todo.lastCheckIn?.day == DateTime.now().day
-                          ? Colors.green
-                          : Colors.grey,
-                      size: 28,
-                    ),
-                    onSelected: (value) async {
-                      if (value == 'today') {
-                        if (todo.checkIn()) {
-                          context.read<TodoProvider>().updateTodo(todo);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('打卡成功！连续打卡${todo.streakCount}天'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('今天不是打卡日期'),
-                              backgroundColor: Colors.orange,
-                            ),
-                          );
-                        }
-                      } else if (value == 'select_date') {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now(),
-                          firstDate:
-                              DateTime.now().subtract(const Duration(days: 7)),
-                          lastDate: DateTime.now(),
-                          helpText: '选择补打卡日期',
-                          cancelText: '取消',
-                          confirmText: '确认',
-                        );
-                        if (date != null) {
-                          if (todo.checkIn(date)) {
-                            context.read<TodoProvider>().updateTodo(todo);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('补打卡成功！连续打卡${todo.streakCount}天'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('所选日期不是打卡日期'),
-                                backgroundColor: Colors.orange,
-                              ),
-                            );
-                          }
-                        }
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'today',
-                        child: Row(
-                          children: [
-                            Icon(Icons.today),
-                            SizedBox(width: 8),
-                            Text('今日打卡'),
-                          ],
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'select_date',
-                        child: Row(
-                          children: [
-                            Icon(Icons.calendar_today),
-                            SizedBox(width: 8),
-                            Text('补打卡'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  )
+                ? _buildPopupMenuButton(todo)
                 : Checkbox(
                     value: todo.isCompleted,
-                    onChanged: (_) =>
-                        context.read<TodoProvider>().toggleTodo(todo.id),
+                    onChanged: (_) {
+                      final currentContext = context;
+                      if (!mounted) return;
+                      currentContext.read<TodoProvider>().toggleTodo(todo.id);
+                    },
                   ),
             title: Text(
               todo.title,
@@ -296,7 +316,7 @@ class _TodoListScreenState extends State<TodoListScreen>
                   ),
                 IconButton(
                   icon: const Icon(Icons.edit),
-                  onPressed: () => _showEditTodoDialog(context, todo),
+                  onPressed: () => _showEditTodoDialog(todo),
                 ),
               ],
             ),
@@ -306,7 +326,11 @@ class _TodoListScreenState extends State<TodoListScreen>
     );
   }
 
-  Future<void> _showEditTodoDialog(BuildContext context, Todo todo) async {
+  Future<void> _showEditTodoDialog(Todo todo) async {
+    if (!mounted) return;
+    final outerContext = context;
+    if (!outerContext.mounted) return;
+
     _textController.text = todo.title;
     DateTime? selectedDate = todo.scheduledDate;
     TimeOfDay? startTime = todo.startTime;
@@ -318,385 +342,388 @@ class _TodoListScreenState extends State<TodoListScreen>
         : List.filled(7, true);
     checkInTime = todo.type == TodoType.checkin ? todo.checkInTime : null;
 
-    return showDialog(
-      context: context,
-      builder: (context) {
+    await showDialog(
+      context: outerContext,
+      builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('编辑待办事项'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: _textController,
-                      decoration: const InputDecoration(
-                        hintText: '请输入待办事项内容',
+          builder: (dialogContext, setState) => AlertDialog(
+            title: const Text('编辑待办事项'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _textController,
+                    decoration: const InputDecoration(
+                      hintText: '请输入待办事项内容',
+                    ),
+                    autofocus: true,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButton<TodoType>(
+                    value: selectedType,
+                    items: TodoType.values.map((type) {
+                      String label;
+                      switch (type) {
+                        case TodoType.scheduled:
+                          label = '定时任务';
+                          break;
+                        case TodoType.checkin:
+                          label = '打卡任务';
+                          break;
+                        case TodoType.deadline:
+                          label = 'DDL任务';
+                          break;
+                      }
+                      return DropdownMenuItem(
+                        value: type,
+                        child: Text(label),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        selectedType = value!;
+                      });
+                    },
+                  ),
+                  if (selectedType == TodoType.deadline) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Text('截止日期: '),
+                        TextButton(
+                          onPressed: () async {
+                            if (!mounted) return;
+                            final date = await showDatePicker(
+                              context: dialogContext,
+                              initialDate: selectedDate ?? DateTime.now(),
+                              firstDate: DateTime.now(),
+                              lastDate:
+                                  DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (date != null && mounted) {
+                              setState(() {
+                                selectedDate = date;
+                              });
+                            }
+                          },
+                          child: Text(
+                            selectedDate != null
+                                ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
+                                : '选择日期',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Text('截止时间: '),
+                        TextButton(
+                          onPressed: () async {
+                            if (!mounted) return;
+                            final time = await showTimePicker(
+                              context: dialogContext,
+                              initialTime: startTime ?? TimeOfDay.now(),
+                            );
+                            if (time != null && mounted) {
+                              setState(() {
+                                startTime = time;
+                              });
+                            }
+                          },
+                          child: Text(
+                            startTime != null
+                                ? startTime!.format(dialogContext)
+                                : '选择时间',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('提醒设置:'),
+                    ListTile(
+                      title: const Text('提前1天'),
+                      leading: Radio<Duration>(
+                        value: const Duration(days: 1),
+                        groupValue: reminderBefore,
+                        onChanged: (Duration? value) {
+                          setState(() {
+                            reminderBefore = value;
+                          });
+                        },
                       ),
-                      autofocus: true,
+                    ),
+                    ListTile(
+                      title: const Text('提前12小时'),
+                      leading: Radio<Duration>(
+                        value: const Duration(hours: 12),
+                        groupValue: reminderBefore,
+                        onChanged: (Duration? value) {
+                          setState(() {
+                            reminderBefore = value;
+                          });
+                        },
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('提前2小时'),
+                      leading: Radio<Duration>(
+                        value: const Duration(hours: 2),
+                        groupValue: reminderBefore,
+                        onChanged: (Duration? value) {
+                          setState(() {
+                            reminderBefore = value;
+                          });
+                        },
+                      ),
+                    ),
+                  ] else if (selectedType == TodoType.scheduled) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Text('日期: '),
+                        TextButton(
+                          onPressed: () async {
+                            if (!mounted) return;
+                            final date = await showDatePicker(
+                              context: dialogContext,
+                              initialDate: DateTime.now(),
+                              firstDate: DateTime.now(),
+                              lastDate:
+                                  DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (date != null && mounted) {
+                              setState(() {
+                                selectedDate = date;
+                              });
+                            }
+                          },
+                          child: Text(
+                            selectedDate != null
+                                ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
+                                : '选择日期',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Text('开始时间: '),
+                        TextButton(
+                          onPressed: () async {
+                            if (!mounted) return;
+                            final time = await showTimePicker(
+                              context: dialogContext,
+                              initialTime: TimeOfDay.now(),
+                            );
+                            if (time != null && mounted) {
+                              setState(() {
+                                startTime = time;
+                              });
+                            }
+                          },
+                          child: Text(
+                            startTime != null
+                                ? '${startTime!.hour}:${startTime!.minute}'
+                                : '选择时间',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Text('结束时间: '),
+                        TextButton(
+                          onPressed: () async {
+                            if (!mounted) return;
+                            final time = await showTimePicker(
+                              context: dialogContext,
+                              initialTime: TimeOfDay.now(),
+                            );
+                            if (time != null && mounted) {
+                              setState(() {
+                                endTime = time;
+                              });
+                            }
+                          },
+                          child: Text(
+                            endTime != null
+                                ? '${endTime!.hour}:${endTime!.minute}'
+                                : '选择时间',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: needsReminder,
+                          onChanged: (value) {
+                            setState(() {
+                              needsReminder = value!;
+                            });
+                          },
+                        ),
+                        const Text('需要提醒'),
+                      ],
+                    ),
+                  ] else if (selectedType == TodoType.checkin) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Text('打卡日期：'),
+                        TextButton(
+                          onPressed: () async {
+                            if (!mounted) return;
+                            final date = await showDatePicker(
+                              context: dialogContext,
+                              initialDate: selectedDate ?? DateTime.now(),
+                              firstDate: DateTime.now()
+                                  .subtract(const Duration(days: 7)),
+                              lastDate: DateTime.now(),
+                            );
+                            if (date != null && mounted) {
+                              setState(() {
+                                selectedDate = date;
+                              });
+                            }
+                          },
+                          child: Text(
+                            selectedDate != null
+                                ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
+                                : '打卡日期（可选）',
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 16),
-                    DropdownButton<TodoType>(
-                      value: selectedType,
-                      items: TodoType.values.map((type) {
-                        String label;
-                        switch (type) {
-                          case TodoType.scheduled:
-                            label = '定时任务';
-                            break;
-                          case TodoType.checkin:
-                            label = '打卡任务';
-                            break;
-                          case TodoType.deadline:
-                            label = 'DDL任务';
-                            break;
-                        }
-                        return DropdownMenuItem(
-                          value: type,
-                          child: Text(label),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          selectedType = value!;
-                        });
-                      },
-                    ),
-                    if (selectedType == TodoType.deadline) ...[
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const Text('截止日期: '),
-                          TextButton(
-                            onPressed: () async {
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: selectedDate ?? DateTime.now(),
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now()
-                                    .add(const Duration(days: 365)),
-                              );
-                              if (date != null) {
-                                setState(() {
-                                  selectedDate = date;
-                                });
-                              }
-                            },
-                            child: Text(
-                              selectedDate != null
-                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
-                                  : '选择日期',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Text('截止时间: '),
-                          TextButton(
-                            onPressed: () async {
-                              final time = await showTimePicker(
-                                context: context,
-                                initialTime: startTime ?? TimeOfDay.now(),
-                              );
-                              if (time != null) {
-                                setState(() {
-                                  startTime = time;
-                                });
-                              }
-                            },
-                            child: Text(
-                              startTime != null
-                                  ? startTime!.format(context)
-                                  : '选择时间',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Text('提醒设置:'),
-                      ListTile(
-                        title: const Text('提前1天'),
-                        leading: Radio<Duration>(
-                          value: const Duration(days: 1),
-                          groupValue: reminderBefore,
-                          onChanged: (Duration? value) {
-                            setState(() {
-                              reminderBefore = value;
-                            });
-                          },
-                        ),
-                      ),
-                      ListTile(
-                        title: const Text('提前12小时'),
-                        leading: Radio<Duration>(
-                          value: const Duration(hours: 12),
-                          groupValue: reminderBefore,
-                          onChanged: (Duration? value) {
-                            setState(() {
-                              reminderBefore = value;
-                            });
-                          },
-                        ),
-                      ),
-                      ListTile(
-                        title: const Text('提前2小时'),
-                        leading: Radio<Duration>(
-                          value: const Duration(hours: 2),
-                          groupValue: reminderBefore,
-                          onChanged: (Duration? value) {
-                            setState(() {
-                              reminderBefore = value;
-                            });
-                          },
-                        ),
-                      ),
-                    ] else if (selectedType == TodoType.scheduled) ...[
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const Text('日期: '),
-                          TextButton(
-                            onPressed: () async {
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: selectedDate ?? DateTime.now(),
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now()
-                                    .add(const Duration(days: 365)),
-                              );
-                              if (date != null) {
-                                setState(() {
-                                  selectedDate = date;
-                                });
-                              }
-                            },
-                            child: Text(
-                              selectedDate != null
-                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
-                                  : '选择日期',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Text('开始时间: '),
-                          TextButton(
-                            onPressed: () async {
-                              final time = await showTimePicker(
-                                context: context,
-                                initialTime: startTime ?? TimeOfDay.now(),
-                              );
-                              if (time != null) {
-                                setState(() {
-                                  startTime = time;
-                                });
-                              }
-                            },
-                            child: Text(
-                              startTime != null
-                                  ? '${startTime!.hour}:${startTime!.minute.toString().padLeft(2, '0')}'
-                                  : '选择时间',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Text('结束时间: '),
-                          TextButton(
-                            onPressed: () async {
-                              final time = await showTimePicker(
-                                context: context,
-                                initialTime: endTime ?? TimeOfDay.now(),
-                              );
-                              if (time != null) {
-                                setState(() {
-                                  endTime = time;
-                                });
-                              }
-                            },
-                            child: Text(
-                              endTime != null
-                                  ? '${endTime!.hour}:${endTime!.minute.toString().padLeft(2, '0')}'
-                                  : '选择时间',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Checkbox(
-                            value: needsReminder,
-                            onChanged: (value) {
+                    const Text('打卡时间设置：'),
+                    Row(
+                      children: [
+                        const Text('提醒时间: '),
+                        TextButton(
+                          onPressed: () async {
+                            if (!mounted) return;
+                            final time = await showTimePicker(
+                              context: dialogContext,
+                              initialTime: checkInTime ?? TimeOfDay.now(),
+                            );
+                            if (time != null && mounted) {
                               setState(() {
-                                needsReminder = value!;
+                                checkInTime = time;
+                              });
+                            }
+                          },
+                          child: Text(
+                            checkInTime != null
+                                ? '${checkInTime!.hour}:${checkInTime!.minute.toString().padLeft(2, '0')}'
+                                : '选择时间',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('打卡频率：'),
+                    Wrap(
+                      spacing: 4.0,
+                      children: [
+                        for (var i = 0; i < 7; i++)
+                          FilterChip(
+                            label: Text(['日', '一', '二', '三', '四', '五', '六'][i]),
+                            selected: selectedWeekdays[i],
+                            onSelected: (bool selected) {
+                              setState(() {
+                                selectedWeekdays[i] = selected;
                               });
                             },
                           ),
-                          const Text('需要提醒'),
-                        ],
-                      ),
-                    ] else if (selectedType == TodoType.checkin) ...[
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const Text('打卡日期：'),
-                          TextButton(
-                            onPressed: () async {
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: selectedDate ?? DateTime.now(),
-                                firstDate: DateTime.now()
-                                    .subtract(const Duration(days: 7)),
-                                lastDate: DateTime.now(),
-                              );
-                              if (date != null) {
-                                setState(() {
-                                  selectedDate = date;
-                                });
-                              }
-                            },
-                            child: Text(
-                              selectedDate != null
-                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
-                                  : '打卡日期（可选）',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      const Text('打卡时间设置：'),
-                      Row(
-                        children: [
-                          const Text('提醒时间: '),
-                          TextButton(
-                            onPressed: () async {
-                              final time = await showTimePicker(
-                                context: context,
-                                initialTime: checkInTime ?? TimeOfDay.now(),
-                              );
-                              if (time != null) {
-                                setState(() {
-                                  checkInTime = time;
-                                });
-                              }
-                            },
-                            child: Text(
-                              checkInTime != null
-                                  ? '${checkInTime!.hour}:${checkInTime!.minute.toString().padLeft(2, '0')}'
-                                  : '选择时间',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Text('打卡频率：'),
-                      Wrap(
-                        spacing: 4.0,
-                        children: [
-                          for (var i = 0; i < 7; i++)
-                            FilterChip(
-                              label:
-                                  Text(['日', '一', '二', '三', '四', '五', '六'][i]),
-                              selected: selectedWeekdays[i],
-                              onSelected: (bool selected) {
-                                setState(() {
-                                  selectedWeekdays[i] = selected;
-                                });
-                              },
-                            ),
-                        ],
-                      ),
-                    ],
+                      ],
+                    ),
                   ],
-                ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    _textController.clear();
-                    Navigator.pop(context);
-                  },
-                  child: const Text('取消'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    if (_textController.text.isNotEmpty) {
-                      if (selectedType == TodoType.scheduled) {
-                        if (selectedDate == null ||
-                            startTime == null ||
-                            endTime == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('请填写完整的定时任务信息')),
-                          );
-                          return;
-                        }
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () {
+                  if (_textController.text.isNotEmpty) {
+                    if (selectedType == TodoType.scheduled) {
+                      if (selectedDate == null ||
+                          startTime == null ||
+                          endTime == null) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          const SnackBar(content: Text('请填写完整的定时任务信息')),
+                        );
+                        return;
                       }
-                      final updatedTodo = todo.copyWith(
-                        title: _textController.text,
-                        type: selectedType,
-                        scheduledDate: selectedType == TodoType.scheduled
-                            ? selectedDate
-                            : null,
-                        startTime: selectedType == TodoType.deadline
-                            ? startTime
-                            : selectedType == TodoType.scheduled
-                                ? startTime
-                                : null,
-                        endTime:
-                            selectedType == TodoType.scheduled ? endTime : null,
-                        needsReminder: selectedType == TodoType.scheduled
-                            ? needsReminder
-                            : true,
-                        weekdays: selectedType == TodoType.checkin
-                            ? selectedWeekdays
-                            : null,
-                        checkInTime: selectedType == TodoType.checkin
-                            ? checkInTime
-                            : null,
-                        deadline: selectedType == TodoType.deadline
-                            ? selectedDate
-                            : null,
-                        reminderBefore: selectedType == TodoType.deadline
-                            ? reminderBefore
-                            : null,
-                      );
-
-                      context.read<TodoProvider>().updateTodo(updatedTodo);
-                      _textController.clear();
-                      Navigator.pop(context);
                     }
-                  },
-                  child: const Text('保存'),
-                ),
-              ],
-            );
-          },
+                    final updatedTodo = todo.copyWith(
+                      title: _textController.text,
+                      type: selectedType,
+                      scheduledDate: selectedType == TodoType.scheduled
+                          ? selectedDate
+                          : null,
+                      startTime: selectedType == TodoType.deadline
+                          ? startTime
+                          : selectedType == TodoType.scheduled
+                              ? startTime
+                              : null,
+                      endTime:
+                          selectedType == TodoType.scheduled ? endTime : null,
+                      needsReminder: selectedType == TodoType.scheduled
+                          ? needsReminder
+                          : true,
+                      weekdays: selectedType == TodoType.checkin
+                          ? selectedWeekdays
+                          : null,
+                      checkInTime:
+                          selectedType == TodoType.checkin ? checkInTime : null,
+                      deadline: selectedType == TodoType.deadline
+                          ? selectedDate
+                          : null,
+                      reminderBefore: selectedType == TodoType.deadline
+                          ? reminderBefore
+                          : null,
+                    );
+
+                    if (!outerContext.mounted) return;
+                    outerContext.read<TodoProvider>().updateTodo(updatedTodo);
+                    _textController.clear();
+                    Navigator.pop(dialogContext);
+                  }
+                },
+                child: const Text('保存'),
+              ),
+            ],
+          ),
         );
       },
     );
   }
 
   Future<void> _showAddTodoDialog(BuildContext context) async {
+    if (!context.mounted) return;
+
     DateTime? selectedDate;
     TimeOfDay? startTime;
     TimeOfDay? endTime;
     bool needsReminder = false;
     TodoType selectedType = TodoType.scheduled;
 
-    return showDialog(
+    await showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setState) {
+          builder: (dialogContext, setState) {
             return AlertDialog(
               title: const Text('添加待办事项'),
               content: SingleChildScrollView(
@@ -784,7 +811,7 @@ class _TodoListScreenState extends State<TodoListScreen>
                             },
                             child: Text(
                               startTime != null
-                                  ? '${startTime!.format(context)}'
+                                  ? startTime!.format(context)
                                   : '选择时间',
                             ),
                           ),
@@ -995,7 +1022,10 @@ class _TodoListScreenState extends State<TodoListScreen>
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    _textController.clear();
+                    Navigator.pop(dialogContext);
+                  },
                   child: const Text('取消'),
                 ),
                 TextButton(
@@ -1005,31 +1035,33 @@ class _TodoListScreenState extends State<TodoListScreen>
                         if (selectedDate == null ||
                             startTime == null ||
                             endTime == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
                             const SnackBar(content: Text('请填写完整的定时任务信息')),
                           );
                           return;
                         }
                       } else if (selectedType == TodoType.deadline) {
                         if (selectedDate == null || startTime == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
                             const SnackBar(content: Text('请设置截止日期和时间')),
                           );
                           return;
                         }
                         if (reminderBefore == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
                             const SnackBar(content: Text('请选择提醒时间')),
                           );
                           return;
                         }
                       } else if (selectedType == TodoType.checkin &&
                           checkInTime == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
                           const SnackBar(content: Text('请设置打卡时间')),
                         );
                         return;
                       }
+
+                      if (!context.mounted) return;
                       context.read<TodoProvider>().addTodo(
                             _textController.text,
                             type: selectedType,
@@ -1061,7 +1093,7 @@ class _TodoListScreenState extends State<TodoListScreen>
                                 : null,
                           );
                       _textController.clear();
-                      Navigator.pop(context);
+                      Navigator.pop(dialogContext);
                     }
                   },
                   child: const Text('添加'),

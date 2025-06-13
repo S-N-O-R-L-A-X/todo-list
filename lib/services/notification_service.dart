@@ -6,12 +6,15 @@ import '../models/todo.dart';
 class NotificationService {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
+
   Future<void> initialize() async {
-    tz.initializeTimeZones(); // 初始化时区数据    // 为Android创建通知通道
+    tz.initializeTimeZones();
+
+    // 为Android创建通知通道
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'todo_reminder', // id
-      '待办提醒', // name
-      description: '待办事项的提醒通知', // description
+      'todo_reminder',
+      '待办提醒',
+      description: '待办事项的提醒通知',
       importance: Importance.high,
     );
 
@@ -38,7 +41,6 @@ class NotificationService {
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse details) {
         // 处理通知点击
-        print('Notification clicked: ${details.payload}');
       },
     );
   }
@@ -47,61 +49,100 @@ class NotificationService {
     if (!todo.needsReminder) return;
 
     DateTime? scheduledDateTime;
+    String title = '待办提醒';
     String message = todo.title;
+    bool dailyRepeat = false;
 
-    if (todo.type == TodoType.scheduled &&
-        todo.scheduledDate != null &&
-        todo.startTime != null) {
-      scheduledDateTime = DateTime(
-        todo.scheduledDate!.year,
-        todo.scheduledDate!.month,
-        todo.scheduledDate!.day,
-        todo.startTime!.hour,
-        todo.startTime!.minute,
-      );
-    } else if (todo.type == TodoType.deadline &&
-        todo.deadline != null &&
-        todo.reminderBefore != null) {
-      scheduledDateTime = todo.deadline!.subtract(todo.reminderBefore!);
-      final timeLeft = todo.reminderBefore!.inHours >= 24
-          ? '${todo.reminderBefore!.inDays}天'
-          : '${todo.reminderBefore!.inHours}小时';
-      message = '【DDL提醒】$message 将在$timeLeft后截止';
+    switch (todo.type) {
+      case TodoType.scheduled:
+        if (todo.scheduledDate != null && todo.startTime != null) {
+          scheduledDateTime = DateTime(
+            todo.scheduledDate!.year,
+            todo.scheduledDate!.month,
+            todo.scheduledDate!.day,
+            todo.startTime!.hour,
+            todo.startTime!.minute,
+          );
+        }
+        break;
+
+      case TodoType.checkin:
+        if (todo.checkInTime != null) {
+          final now = DateTime.now();
+          scheduledDateTime = DateTime(
+            now.year,
+            now.month,
+            now.day,
+            todo.checkInTime!.hour,
+            todo.checkInTime!.minute,
+          );
+          // 如果今天的提醒时间已经过了，设置为明天
+          if (scheduledDateTime.isBefore(now)) {
+            scheduledDateTime = scheduledDateTime.add(const Duration(days: 1));
+          }
+          title = '打卡提醒';
+          message = '该打卡啦：${todo.title}';
+          dailyRepeat = true;
+        }
+        break;
+
+      case TodoType.deadline:
+        if (todo.deadline != null && todo.reminderBefore != null) {
+          scheduledDateTime = todo.deadline!.subtract(todo.reminderBefore!);
+          final timeLeft = todo.reminderBefore!.inHours >= 24
+              ? '${todo.reminderBefore!.inDays}天'
+              : '${todo.reminderBefore!.inHours}小时';
+          title = 'DDL提醒';
+          message = '${todo.title} 将在$timeLeft后截止';
+        }
+        break;
     }
 
     if (scheduledDateTime == null) return;
 
-    // 如果时间已经过去，就不设置提醒
-    if (scheduledDateTime.isBefore(DateTime.now())) {
+    await scheduleNotification(
+      id: todo.id.hashCode,
+      title: title,
+      body: message,
+      scheduledDate: scheduledDateTime,
+      dailyRepeat: dailyRepeat,
+    );
+  }
+
+  Future<void> scheduleNotification({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledDate,
+    bool dailyRepeat = false,
+  }) async {
+    const notificationDetails = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'todo_reminder',
+        '待办提醒',
+        channelDescription: '待办事项的提醒通知',
+        importance: Importance.max,
+        priority: Priority.high,
+      ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
+    );
+
+    if (scheduledDate.isBefore(DateTime.now()) && !dailyRepeat) {
       return;
     }
 
-    const androidDetails = AndroidNotificationDetails(
-      'todo_reminder',
-      '待办提醒',
-      channelDescription: '待办事项的提醒通知',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
-
-    const iOSDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iOSDetails,
-    );
     await _notifications.zonedSchedule(
-      todo.id.hashCode,
-      '待办提醒',
-      todo.title,
-      tz.TZDateTime.from(scheduledDateTime, tz.local),
+      id,
+      title,
+      body,
+      tz.TZDateTime.from(scheduledDate, tz.local),
       notificationDetails,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
+      matchDateTimeComponents: dailyRepeat ? DateTimeComponents.time : null,
     );
   }
 
