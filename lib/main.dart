@@ -53,9 +53,12 @@ class _TodoListScreenState extends State<TodoListScreen>
   final _textController = TextEditingController();
   late TabController _tabController;
 
-  // 每日打卡相关变量
+  // 打卡相关变量
   List<bool> selectedWeekdays = List.filled(7, true);
+  List<bool> selectedMonthDays = List.generate(31, (index) => true);
   TimeOfDay? checkInTime;
+  CheckinFrequency selectedFrequency = CheckinFrequency.daily;
+  Duration? checkInInterval;
 
   // DDL任务相关变量
   Duration? reminderBefore;
@@ -238,15 +241,43 @@ class _TodoListScreenState extends State<TodoListScreen>
                 '\n提前${todo.reminderBefore!.inHours >= 24 ? '${todo.reminderBefore!.inDays}天' : '${todo.reminderBefore!.inHours}小时'}提醒';
           }
         } else if (todo.type == TodoType.checkin) {
-          final weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
-          final activeDays = todo.weekdays
-              .asMap()
-              .entries
-              .where((e) => e.value)
-              .map((e) => weekdayLabels[e.key])
-              .join(' ');
+          String frequencyText;
+          switch (todo.frequency) {
+            case CheckinFrequency.hourly:
+              frequencyText = '每${todo.checkInInterval?.inHours ?? 1}小时一次';
+              break;
+            case CheckinFrequency.daily:
+              frequencyText = '每日一次';
+              break;
+            case CheckinFrequency.weekly:
+              final weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
+              final activeDays = todo.weekdays
+                  .asMap()
+                  .entries
+                  .where((e) => e.value)
+                  .map((e) => weekdayLabels[e.key])
+                  .join(' ');
+              frequencyText = '每周${activeDays}打卡';
+              break;
+            case CheckinFrequency.monthly:
+              final activeDays = todo.monthDays
+                  .asMap()
+                  .entries
+                  .where((e) => e.value)
+                  .map((e) => (e.key + 1).toString())
+                  .join(' ');
+              frequencyText = '每月${activeDays}号打卡';
+              break;
+            case CheckinFrequency.weeklyOnce:
+              frequencyText = '每周打卡一次';
+              break;
+            case CheckinFrequency.monthlyOnce:
+              frequencyText = '每月打卡一次';
+              break;
+          }
           subtitle = '打卡时间: ${todo.checkInTime?.format(context) ?? '未设置'}\n'
-              '连续打卡: ${todo.streakCount}天 (每周$activeDays)';
+              '连续打卡: ${todo.streakCount}天\n'
+              '频率: $frequencyText';
         }
 
         return Dismissible(
@@ -337,10 +368,21 @@ class _TodoListScreenState extends State<TodoListScreen>
     TimeOfDay? endTime = todo.endTime;
     bool needsReminder = todo.needsReminder;
     TodoType selectedType = todo.type;
-    selectedWeekdays = todo.type == TodoType.checkin
+    selectedWeekdays = todo.type == TodoType.checkin &&
+            todo.frequency == CheckinFrequency.weekly
         ? List.from(todo.weekdays)
         : List.filled(7, true);
+    selectedMonthDays = todo.type == TodoType.checkin &&
+            todo.frequency == CheckinFrequency.monthly
+        ? List.from(todo.monthDays)
+        : List.generate(31, (index) => true);
     checkInTime = todo.type == TodoType.checkin ? todo.checkInTime : null;
+    selectedFrequency =
+        todo.type == TodoType.checkin ? todo.frequency : CheckinFrequency.daily;
+    checkInInterval = todo.type == TodoType.checkin &&
+            todo.frequency == CheckinFrequency.hourly
+        ? todo.checkInInterval
+        : const Duration(hours: 1);
 
     await showDialog(
       context: outerContext,
@@ -601,14 +643,12 @@ class _TodoListScreenState extends State<TodoListScreen>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    const Text('打卡时间设置：'),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Text('提醒时间: '),
+                        const Text('打卡时间: '),
                         TextButton(
                           onPressed: () async {
-                            if (!mounted) return;
                             final time = await showTimePicker(
                               context: dialogContext,
                               initialTime: checkInTime ?? TimeOfDay.now(),
@@ -629,21 +669,99 @@ class _TodoListScreenState extends State<TodoListScreen>
                     ),
                     const SizedBox(height: 8),
                     const Text('打卡频率：'),
-                    Wrap(
-                      spacing: 4.0,
-                      children: [
-                        for (var i = 0; i < 7; i++)
-                          FilterChip(
-                            label: Text(['日', '一', '二', '三', '四', '五', '六'][i]),
-                            selected: selectedWeekdays[i],
-                            onSelected: (bool selected) {
-                              setState(() {
-                                selectedWeekdays[i] = selected;
-                              });
-                            },
-                          ),
-                      ],
+                    DropdownButton<CheckinFrequency>(
+                      value: selectedFrequency,
+                      items: CheckinFrequency.values.map((frequency) {
+                        String label;
+                        switch (frequency) {
+                          case CheckinFrequency.hourly:
+                            label = '每小时';
+                            break;
+                          case CheckinFrequency.daily:
+                            label = '每日一次';
+                            break;
+                          case CheckinFrequency.weekly:
+                            label = '每周指定日期';
+                            break;
+                          case CheckinFrequency.monthly:
+                            label = '每月指定日期';
+                            break;
+                          case CheckinFrequency.weeklyOnce:
+                            label = '每周一次';
+                            break;
+                          case CheckinFrequency.monthlyOnce:
+                            label = '每月一次';
+                            break;
+                        }
+                        return DropdownMenuItem(
+                          value: frequency,
+                          child: Text(label),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          selectedFrequency = value!;
+                        });
+                      },
                     ),
+                    const SizedBox(height: 8),
+                    if (selectedFrequency == CheckinFrequency.hourly) ...[
+                      const Text('打卡间隔：'),
+                      DropdownButton<Duration>(
+                        value: checkInInterval ?? const Duration(hours: 1),
+                        items: [
+                          for (int i = 1; i <= 12; i++)
+                            DropdownMenuItem(
+                              value: Duration(hours: i),
+                              child: Text('$i小时'),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            checkInInterval = value;
+                          });
+                        },
+                      ),
+                    ] else if (selectedFrequency ==
+                        CheckinFrequency.weekly) ...[
+                      const Text('选择打卡日期：'),
+                      Wrap(
+                        spacing: 4.0,
+                        children: [
+                          for (var i = 0; i < 7; i++)
+                            FilterChip(
+                              label:
+                                  Text(['日', '一', '二', '三', '四', '五', '六'][i]),
+                              selected: selectedWeekdays[i],
+                              onSelected: (bool selected) {
+                                setState(() {
+                                  selectedWeekdays[i] = selected;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ] else if (selectedFrequency ==
+                        CheckinFrequency.monthly) ...[
+                      const Text('选择打卡日期：'),
+                      SizedBox(
+                        height: 150,
+                        child: GridView.count(
+                          crossAxisCount: 7,
+                          children: List.generate(31, (index) {
+                            return FilterChip(
+                              label: Text('${index + 1}'),
+                              selected: selectedMonthDays[index],
+                              onSelected: (bool selected) {
+                                setState(() {
+                                  selectedMonthDays[index] = selected;
+                                });
+                              },
+                            );
+                          }),
+                        ),
+                      ),
+                    ],
                   ],
                 ],
               ),
@@ -656,16 +774,54 @@ class _TodoListScreenState extends State<TodoListScreen>
               TextButton(
                 onPressed: () {
                   if (_textController.text.isNotEmpty) {
-                    if (selectedType == TodoType.scheduled) {
-                      if (selectedDate == null ||
-                          startTime == null ||
-                          endTime == null) {
-                        ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          const SnackBar(content: Text('请填写完整的定时任务信息')),
-                        );
-                        return;
-                      }
+                    // 验证必填字段
+                    String? errorMessage;
+
+                    switch (selectedType) {
+                      case TodoType.scheduled:
+                        if (selectedDate == null || startTime == null) {
+                          errorMessage = '请设置日期和开始时间';
+                        }
+                        break;
+
+                      case TodoType.deadline:
+                        if (selectedDate == null || startTime == null) {
+                          errorMessage = '请设置截止日期和时间';
+                        } else if (reminderBefore == null) {
+                          errorMessage = '请选择提醒时间';
+                        }
+                        break;
+
+                      case TodoType.checkin:
+                        if (checkInTime == null) {
+                          errorMessage = '请设置打卡时间';
+                        } else if (selectedFrequency ==
+                                CheckinFrequency.hourly &&
+                            checkInInterval == null) {
+                          errorMessage = '请设置打卡间隔';
+                        } else if (selectedFrequency ==
+                                CheckinFrequency.weekly &&
+                            !selectedWeekdays.contains(true)) {
+                          errorMessage = '请至少选择一个打卡日期';
+                        } else if (selectedFrequency ==
+                                CheckinFrequency.monthly &&
+                            !selectedMonthDays.contains(true)) {
+                          errorMessage = '请至少选择一个打卡日期';
+                        } else if (selectedFrequency ==
+                                CheckinFrequency.weeklyOnce ||
+                            selectedFrequency == CheckinFrequency.monthlyOnce) {
+                          // 不需要额外验证，因为这两种频率不限制具体哪一天打卡
+                        }
+                        break;
                     }
+
+                    if (errorMessage != null) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        SnackBar(content: Text(errorMessage)),
+                      );
+                      return;
+                    }
+
                     final updatedTodo = todo.copyWith(
                       title: _textController.text,
                       type: selectedType,
@@ -682,8 +838,16 @@ class _TodoListScreenState extends State<TodoListScreen>
                       needsReminder: selectedType == TodoType.scheduled
                           ? needsReminder
                           : true,
-                      weekdays: selectedType == TodoType.checkin
+                      frequency: selectedType == TodoType.checkin
+                          ? selectedFrequency
+                          : CheckinFrequency.daily,
+                      weekdays: selectedType == TodoType.checkin &&
+                              selectedFrequency == CheckinFrequency.weekly
                           ? selectedWeekdays
+                          : null,
+                      monthDays: selectedType == TodoType.checkin &&
+                              selectedFrequency == CheckinFrequency.monthly
+                          ? selectedMonthDays
                           : null,
                       checkInTime:
                           selectedType == TodoType.checkin ? checkInTime : null,
@@ -692,6 +856,10 @@ class _TodoListScreenState extends State<TodoListScreen>
                           : null,
                       reminderBefore: selectedType == TodoType.deadline
                           ? reminderBefore
+                          : null,
+                      checkInInterval: selectedType == TodoType.checkin &&
+                              selectedFrequency == CheckinFrequency.hourly
+                          ? checkInInterval
                           : null,
                     );
 
@@ -883,11 +1051,10 @@ class _TodoListScreenState extends State<TodoListScreen>
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      const Text('打卡时间设置：'),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Text('提醒时间: '),
+                          const Text('打卡时间: '),
                           TextButton(
                             onPressed: () async {
                               final time = await showTimePicker(
@@ -910,112 +1077,99 @@ class _TodoListScreenState extends State<TodoListScreen>
                       ),
                       const SizedBox(height: 8),
                       const Text('打卡频率：'),
-                      Wrap(
-                        spacing: 4.0,
-                        children: [
-                          for (var i = 0; i < 7; i++)
-                            FilterChip(
-                              label:
-                                  Text(['日', '一', '二', '三', '四', '五', '六'][i]),
-                              selected: selectedWeekdays[i],
-                              onSelected: (bool selected) {
-                                setState(() {
-                                  selectedWeekdays[i] = selected;
-                                });
-                              },
-                            ),
-                        ],
-                      ),
-                    ] else if (selectedType == TodoType.scheduled) ...[
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const Text('日期: '),
-                          TextButton(
-                            onPressed: () async {
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: DateTime.now(),
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now()
-                                    .add(const Duration(days: 365)),
-                              );
-                              if (date != null) {
-                                setState(() {
-                                  selectedDate = date;
-                                });
-                              }
-                            },
-                            child: Text(
-                              selectedDate != null
-                                  ? '${selectedDate!.year}-${selectedDate!.month}-${selectedDate!.day}'
-                                  : '选择日期',
-                            ),
-                          ),
-                        ],
+                      DropdownButton<CheckinFrequency>(
+                        value: selectedFrequency,
+                        items: CheckinFrequency.values.map((frequency) {
+                          String label;
+                          switch (frequency) {
+                            case CheckinFrequency.hourly:
+                              label = '每小时';
+                              break;
+                            case CheckinFrequency.daily:
+                              label = '每日一次';
+                              break;
+                            case CheckinFrequency.weekly:
+                              label = '每周指定日期';
+                              break;
+                            case CheckinFrequency.monthly:
+                              label = '每月指定日期';
+                              break;
+                            case CheckinFrequency.weeklyOnce:
+                              label = '每周一次';
+                              break;
+                            case CheckinFrequency.monthlyOnce:
+                              label = '每月一次';
+                              break;
+                          }
+                          return DropdownMenuItem(
+                            value: frequency,
+                            child: Text(label),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            selectedFrequency = value!;
+                          });
+                        },
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Text('开始时间: '),
-                          TextButton(
-                            onPressed: () async {
-                              final time = await showTimePicker(
-                                context: context,
-                                initialTime: TimeOfDay.now(),
+                      if (selectedFrequency == CheckinFrequency.hourly) ...[
+                        const Text('打卡间隔：'),
+                        DropdownButton<Duration>(
+                          value: checkInInterval ?? const Duration(hours: 1),
+                          items: [
+                            for (int i = 1; i <= 12; i++)
+                              DropdownMenuItem(
+                                value: Duration(hours: i),
+                                child: Text('$i小时'),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              checkInInterval = value;
+                            });
+                          },
+                        ),
+                      ] else if (selectedFrequency ==
+                          CheckinFrequency.weekly) ...[
+                        const Text('选择打卡日期：'),
+                        Wrap(
+                          spacing: 4.0,
+                          children: [
+                            for (var i = 0; i < 7; i++)
+                              FilterChip(
+                                label: Text(
+                                    ['日', '一', '二', '三', '四', '五', '六'][i]),
+                                selected: selectedWeekdays[i],
+                                onSelected: (bool selected) {
+                                  setState(() {
+                                    selectedWeekdays[i] = selected;
+                                  });
+                                },
+                              ),
+                          ],
+                        ),
+                      ] else if (selectedFrequency ==
+                          CheckinFrequency.monthly) ...[
+                        const Text('选择打卡日期：'),
+                        SizedBox(
+                          height: 150,
+                          child: GridView.count(
+                            crossAxisCount: 7,
+                            children: List.generate(31, (index) {
+                              return FilterChip(
+                                label: Text('${index + 1}'),
+                                selected: selectedMonthDays[index],
+                                onSelected: (bool selected) {
+                                  setState(() {
+                                    selectedMonthDays[index] = selected;
+                                  });
+                                },
                               );
-                              if (time != null) {
-                                setState(() {
-                                  startTime = time;
-                                });
-                              }
-                            },
-                            child: Text(
-                              startTime != null
-                                  ? '${startTime!.hour}:${startTime!.minute}'
-                                  : '选择时间',
-                            ),
+                            }),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Text('结束时间: '),
-                          TextButton(
-                            onPressed: () async {
-                              final time = await showTimePicker(
-                                context: context,
-                                initialTime: TimeOfDay.now(),
-                              );
-                              if (time != null) {
-                                setState(() {
-                                  endTime = time;
-                                });
-                              }
-                            },
-                            child: Text(
-                              endTime != null
-                                  ? '${endTime!.hour}:${endTime!.minute}'
-                                  : '选择时间',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Checkbox(
-                            value: needsReminder,
-                            onChanged: (value) {
-                              setState(() {
-                                needsReminder = value!;
-                              });
-                            },
-                          ),
-                          const Text('需要提醒'),
-                        ],
-                      ),
+                        )
+                      ],
                     ],
                   ],
                 ),
@@ -1031,32 +1185,51 @@ class _TodoListScreenState extends State<TodoListScreen>
                 TextButton(
                   onPressed: () {
                     if (_textController.text.isNotEmpty) {
-                      if (selectedType == TodoType.scheduled) {
-                        if (selectedDate == null ||
-                            startTime == null ||
-                            endTime == null) {
-                          ScaffoldMessenger.of(dialogContext).showSnackBar(
-                            const SnackBar(content: Text('请填写完整的定时任务信息')),
-                          );
-                          return;
-                        }
-                      } else if (selectedType == TodoType.deadline) {
-                        if (selectedDate == null || startTime == null) {
-                          ScaffoldMessenger.of(dialogContext).showSnackBar(
-                            const SnackBar(content: Text('请设置截止日期和时间')),
-                          );
-                          return;
-                        }
-                        if (reminderBefore == null) {
-                          ScaffoldMessenger.of(dialogContext).showSnackBar(
-                            const SnackBar(content: Text('请选择提醒时间')),
-                          );
-                          return;
-                        }
-                      } else if (selectedType == TodoType.checkin &&
-                          checkInTime == null) {
+                      // 验证必填字段
+                      String? errorMessage;
+
+                      switch (selectedType) {
+                        case TodoType.scheduled:
+                          if (selectedDate == null || startTime == null) {
+                            errorMessage = '请设置日期和开始时间';
+                          }
+                          break;
+
+                        case TodoType.deadline:
+                          if (selectedDate == null || startTime == null) {
+                            errorMessage = '请设置截止日期和时间';
+                          } else if (reminderBefore == null) {
+                            errorMessage = '请选择提醒时间';
+                          }
+                          break;
+
+                        case TodoType.checkin:
+                          if (checkInTime == null) {
+                            errorMessage = '请设置打卡时间';
+                          } else if (selectedFrequency ==
+                                  CheckinFrequency.hourly &&
+                              checkInInterval == null) {
+                            errorMessage = '请设置打卡间隔';
+                          } else if (selectedFrequency ==
+                                  CheckinFrequency.weekly &&
+                              !selectedWeekdays.contains(true)) {
+                            errorMessage = '请至少选择一个打卡日期';
+                          } else if (selectedFrequency ==
+                                  CheckinFrequency.monthly &&
+                              !selectedMonthDays.contains(true)) {
+                            errorMessage = '请至少选择一个打卡日期';
+                          } else if (selectedFrequency ==
+                                  CheckinFrequency.weeklyOnce ||
+                              selectedFrequency ==
+                                  CheckinFrequency.monthlyOnce) {
+                            // 不需要额外验证，因为这两种频率不限制具体哪一天打卡
+                          }
+                          break;
+                      }
+
+                      if (errorMessage != null) {
                         ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          const SnackBar(content: Text('请设置打卡时间')),
+                          SnackBar(content: Text(errorMessage)),
                         );
                         return;
                       }
@@ -1079,8 +1252,20 @@ class _TodoListScreenState extends State<TodoListScreen>
                             needsReminder: selectedType == TodoType.scheduled
                                 ? needsReminder
                                 : true,
-                            weekdays: selectedType == TodoType.checkin
+                            frequency: selectedType == TodoType.checkin
+                                ? selectedFrequency
+                                : CheckinFrequency.daily,
+                            weekdays: selectedType == TodoType.checkin &&
+                                    selectedFrequency == CheckinFrequency.weekly
                                 ? selectedWeekdays
+                                : null,
+                            monthDays: selectedType == TodoType.checkin &&
+                                    selectedFrequency ==
+                                        CheckinFrequency.monthly
+                                ? selectedMonthDays
+                                : null,
+                            checkInTime: selectedType == TodoType.checkin
+                                ? checkInTime
                                 : null,
                             deadline: selectedType == TodoType.deadline
                                 ? selectedDate
@@ -1088,8 +1273,9 @@ class _TodoListScreenState extends State<TodoListScreen>
                             reminderBefore: selectedType == TodoType.deadline
                                 ? reminderBefore
                                 : null,
-                            checkInTime: selectedType == TodoType.checkin
-                                ? checkInTime
+                            checkInInterval: selectedType == TodoType.checkin &&
+                                    selectedFrequency == CheckinFrequency.hourly
+                                ? checkInInterval
                                 : null,
                           );
                       _textController.clear();

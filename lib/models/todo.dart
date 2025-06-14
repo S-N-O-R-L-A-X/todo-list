@@ -10,8 +10,10 @@ enum TodoType {
 enum CheckinFrequency {
   hourly, // 每小时
   daily, // 每日
-  weekly, // 每周
-  monthly // 每月
+  weekly, // 每周（指定的每一天）
+  monthly, // 每月（指定的每一天）
+  weeklyOnce, // 每周一次（不限制具体哪一天）
+  monthlyOnce // 每月一次（不限制具体哪一天）
 }
 
 class Todo {
@@ -152,6 +154,25 @@ class Todo {
             lastCheckIn!.month == targetDate.month &&
             lastCheckIn!.day == targetDate.day) return false;
         break;
+
+      case CheckinFrequency.weeklyOnce:
+        if (lastCheckIn != null) {
+          // 获取本周的周日
+          final thisWeekSunday =
+              targetDate.subtract(Duration(days: targetDate.weekday % 7));
+          // 获取上次打卡的周日
+          final lastCheckInWeekSunday =
+              lastCheckIn!.subtract(Duration(days: lastCheckIn!.weekday % 7));
+          // 如果在同一周内已经打过卡，则不能再打卡
+          if (thisWeekSunday == lastCheckInWeekSunday) return false;
+        }
+        break;
+
+      case CheckinFrequency.monthlyOnce:
+        if (lastCheckIn != null &&
+            lastCheckIn!.year == targetDate.year &&
+            lastCheckIn!.month == targetDate.month) return false;
+        break;
     }
 
     // 如果设置了提醒时间，且是当天打卡，则检查时间
@@ -172,15 +193,16 @@ class Todo {
 
     // 更新连续打卡计数
     if (lastCheckIn != null) {
-      final expectedInterval = frequency == CheckinFrequency.hourly
-          ? checkInInterval!
-          : frequency == CheckinFrequency.daily
-              ? const Duration(days: 1)
-              : frequency == CheckinFrequency.weekly
-                  ? const Duration(days: 7)
-                  : Duration(
-                      days: DateTime(targetDate.year, targetDate.month + 1, 0)
-                          .day);
+      final expectedInterval = switch (frequency) {
+        CheckinFrequency.hourly => checkInInterval!,
+        CheckinFrequency.daily => const Duration(days: 1),
+        CheckinFrequency.weekly => const Duration(days: 7),
+        CheckinFrequency.weeklyOnce => const Duration(days: 7),
+        CheckinFrequency.monthly => Duration(
+            days: DateTime(targetDate.year, targetDate.month + 1, 0).day),
+        CheckinFrequency.monthlyOnce =>
+          Duration(days: DateTime(targetDate.year, targetDate.month + 1, 0).day)
+      };
 
       if (targetDate.difference(lastCheckIn!).abs() <= expectedInterval) {
         streakCount++;
@@ -220,6 +242,21 @@ class Todo {
                 lastCheckIn!.year != now.year ||
                 lastCheckIn!.month != now.month ||
                 lastCheckIn!.day != now.day);
+
+      case CheckinFrequency.weeklyOnce:
+        if (lastCheckIn == null) return true;
+        // 获取本周的周日
+        final thisWeekSunday = now.subtract(Duration(days: now.weekday % 7));
+        // 获取上次打卡的周日
+        final lastCheckInWeekSunday =
+            lastCheckIn!.subtract(Duration(days: lastCheckIn!.weekday % 7));
+        // 如果不在同一周，就需要打卡
+        return thisWeekSunday != lastCheckInWeekSunday;
+
+      case CheckinFrequency.monthlyOnce:
+        return lastCheckIn == null ||
+            lastCheckIn!.year != now.year ||
+            lastCheckIn!.month != now.month;
     }
   }
 
