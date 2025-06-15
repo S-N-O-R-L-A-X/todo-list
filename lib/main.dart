@@ -5,6 +5,7 @@ import 'models/todo_provider.dart';
 import 'models/todo.dart';
 import 'services/todo_service.dart';
 import 'services/notification_service.dart';
+import 'services/widget_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,6 +13,11 @@ void main() async {
   final notificationService = NotificationService();
   await notificationService.initialize();
   final todoService = TodoService(prefs, notificationService);
+
+  // 初始化小组件服务
+  await WidgetService.initializeWidget();
+  await WidgetService.updateHomeWidget();
+
   runApp(MyApp(
       todoService: todoService, notificationService: notificationService));
 }
@@ -1153,22 +1159,21 @@ class _TodoListScreenState extends State<TodoListScreen>
                           CheckinFrequency.monthly) ...[
                         const Text('选择打卡日期：'),
                         SizedBox(
-                          height: 150,
-                          child: GridView.count(
-                            crossAxisCount: 7,
-                            children: List.generate(31, (index) {
-                              return FilterChip(
-                                label: Text('${index + 1}'),
-                                selected: selectedMonthDays[index],
-                                onSelected: (bool selected) {
-                                  setState(() {
-                                    selectedMonthDays[index] = selected;
-                                  });
-                                },
-                              );
-                            }),
-                          ),
-                        )
+                            height: 150,
+                            child: GridView.count(
+                              crossAxisCount: 7,
+                              children: List.generate(31, (index) {
+                                return FilterChip(
+                                  label: Text('${index + 1}'),
+                                  selected: selectedMonthDays[index],
+                                  onSelected: (bool selected) {
+                                    setState(() {
+                                      selectedMonthDays[index] = selected;
+                                    });
+                                  },
+                                );
+                              }),
+                            ))
                       ],
                     ],
                   ],
