@@ -1,7 +1,9 @@
 import 'package:home_widget/home_widget.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/todo.dart';
 import 'todo_service.dart';
+import 'notification_service.dart';
 
 class WidgetService {
   static const String appWidgetProvider = 'TodoWidgetProvider';
@@ -10,9 +12,9 @@ class WidgetService {
   static const String dailyTasksKey = 'daily_tasks';
 
   static Future<void> updateHomeWidget() async {
-    final todoService = TodoService();
-    final DateTime now = DateTime.now();
-    final DateTime today = DateTime(now.year, now.month, now.day);
+    final prefs = await SharedPreferences.getInstance();
+    final notificationService = NotificationService();
+    final todoService = TodoService(prefs, notificationService);
 
     // 获取今日任务
     final List<Todo> todayTasks = await todoService.getTodayTasks();
@@ -29,7 +31,7 @@ class WidgetService {
     await HomeWidget.saveWidgetData(
       deadlinesKey,
       deadlines
-          .map((e) => '${e.title} (${e.dueDate?.toString().split(' ')[0]})')
+          .map((e) => '${e.title} (${e.deadline?.toString().split(' ')[0]})')
           .join('\n'),
     );
     await HomeWidget.saveWidgetData(
