@@ -7,4 +7,4 @@
     android:previewImage="@drawable/widget_preview"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:configure="com.example.todo_list.TodoWidgetConfigureActivity" />
+    android:configure="com.example.flutter_application_1.TodoWidgetConfigureActivity" />

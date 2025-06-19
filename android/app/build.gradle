@@ -5,7 +5,8 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
-android {    namespace = "com.example.flutter_application_1"
+android {    
+    namespace = "com.example.flutter_application_1"
     compileSdk = 35
     ndkVersion = "25.1.8937393"
 
@@ -46,4 +47,10 @@ flutter {
 dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
     implementation 'androidx.glance:glance-appwidget:1.2.0-alpha01'
+    
+    // 强制所有模块使用相同版本的 WorkManager
+    constraints {
+        implementation('androidx.work:work-runtime:2.8.1')
+        implementation('androidx.work:work-runtime-ktx:2.8.1')
+    }
 }
