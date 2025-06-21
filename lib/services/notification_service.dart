@@ -6,8 +6,22 @@ import '../models/todo.dart';
 class NotificationService {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
+  bool _isInitialized = false;
+
+  Future<bool> requestPermission() async {
+    if (!_isInitialized) return false;
+
+    final platform = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (platform == null) return false;
+
+    final granted = await platform.requestNotificationsPermission();
+    return granted ?? false;
+  }
 
   Future<void> initialize() async {
+    if (_isInitialized) return;
+
     tz.initializeTimeZones();
 
     // 为Android创建通知通道
@@ -19,10 +33,14 @@ class NotificationService {
     );
 
     // 注册通知通道
-    await _notifications
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
+    final platform = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
+    if (platform != null) {
+      await platform.createNotificationChannel(channel);
+      // 请求权限
+      await platform.requestNotificationsPermission();
+    }
 
     // 初始化设置
     const androidInitialize =
@@ -43,10 +61,12 @@ class NotificationService {
         // 处理通知点击
       },
     );
+
+    _isInitialized = true;
   }
 
   Future<void> scheduleTodoReminder(Todo todo) async {
-    if (!todo.needsReminder) return;
+    if (!_isInitialized || !todo.needsReminder) return;
 
     DateTime? scheduledDateTime;
     String title = '待办提醒';

@@ -101,7 +101,7 @@ class TodoProvider with ChangeNotifier {
       case TodoType.checkin:
         if (todo.checkInTime != null) {
           final now = DateTime.now();
-          final notificationTime = DateTime(
+          var notificationTime = DateTime(
             now.year,
             now.month,
             now.day,
@@ -110,7 +110,7 @@ class TodoProvider with ChangeNotifier {
           );
           // 如果今天的提醒时间已经过了，设置明天的提醒
           if (notificationTime.isBefore(now)) {
-            notificationTime.add(const Duration(days: 1));
+            notificationTime = notificationTime.add(const Duration(days: 1));
           }
           _notificationService.scheduleNotification(
             id: todo.id.hashCode,

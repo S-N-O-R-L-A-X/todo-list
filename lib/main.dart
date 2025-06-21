@@ -12,6 +12,14 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final notificationService = NotificationService();
   await notificationService.initialize();
+
+  // 请求通知权限
+  final hasPermission = await notificationService.requestPermission();
+  if (!hasPermission) {
+    // 可以在这里添加一些提示，告诉用户需要开启通知权限
+    debugPrint('通知权限被拒绝，部分功能可能无法正常工作');
+  }
+
   final todoService = TodoService(prefs, notificationService);
 
   // 初始化小组件服务
